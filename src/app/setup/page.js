@@ -28,21 +28,35 @@ const IT_ROLES = [
   "Database Administrator",
   "Data Engineer",
   "Blockchain Developer",
+  "Software Engineer",
+  "Solutions Architect",
+  "Technical Lead",
+  "Engineering Manager",
 ];
 
 const DIFFICULTY_LEVELS = [
-  { value: "junior", label: "🌱 Junior", desc: "0-2 years experience" },
-  { value: "mid", label: "💼 Mid-Level", desc: "2-5 years experience" },
-  { value: "senior", label: "🏆 Senior", desc: "5+ years experience" },
+  { value: "junior", label: "🌱 Junior", desc: "0-2 years" },
+  { value: "mid", label: "💼 Mid-Level", desc: "2-5 years" },
+  { value: "senior", label: "🏆 Senior", desc: "5-8 years" },
+  { value: "lead", label: "👑 Lead", desc: "8+ years" },
+];
+
+const INTERVIEW_TYPES = [
+  { value: "full", icon: "🎯", label: "Full Interview", desc: "All phases: resume, technical, coding, behavioral" },
+  { value: "resume", icon: "📋", label: "Resume Deep-Dive", desc: "Focus on your projects, experience & skills" },
+  { value: "technical", icon: "⚙️", label: "Technical Only", desc: "Technical + system design + coding" },
+  { value: "coding", icon: "💻", label: "Coding Focus", desc: "Heavy coding challenges with review" },
 ];
 
 export default function SetupPage() {
   const router = useRouter();
-  const [step, setStep] = useState(1); // 1: upload, 2: role select, 3: analyzing
+  const [step, setStep] = useState(1); // 1: upload, 2: configure, 3: analyzing
   const [file, setFile] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [targetRole, setTargetRole] = useState("");
+  const [targetCompany, setTargetCompany] = useState("");
   const [difficulty, setDifficulty] = useState("mid");
+  const [interviewType, setInterviewType] = useState("full");
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState("");
@@ -126,6 +140,8 @@ export default function SetupPage() {
           resumeText,
           targetRole,
           difficulty,
+          targetCompany,
+          interviewType,
         }),
       });
 
@@ -135,7 +151,7 @@ export default function SetupPage() {
         throw new Error(data.error || "Failed to generate questions");
       }
 
-      // Store interview data in sessionStorage (includes full resume text)
+      // Store interview data in sessionStorage
       sessionStorage.setItem(
         "interviewData",
         JSON.stringify({
@@ -144,6 +160,8 @@ export default function SetupPage() {
           resumeText,
           targetRole,
           difficulty,
+          targetCompany,
+          interviewType,
         })
       );
 
@@ -154,6 +172,12 @@ export default function SetupPage() {
       setGenerating(false);
     }
   };
+
+  // Count categories from analysis
+  const projectCount = (analysis?.projects || []).length;
+  const internshipCount = (analysis?.internships || []).length;
+  const experienceCount = (analysis?.experience || []).length;
+  const langCount = (analysis?.programmingLanguages || []).length;
 
   return (
     <div style={{ position: "relative", minHeight: "100vh", overflow: "hidden" }}>
@@ -187,7 +211,7 @@ export default function SetupPage() {
               Upload Your <span className="gradient-text">Resume</span>
             </h1>
             <p style={styles.subtitle}>
-              Drop your PDF resume below and our AI will analyze your skills, projects, and experience.
+              Drop your PDF resume below and our AI will deeply analyze your skills, projects, internships, and experience.
             </p>
 
             <div
@@ -254,7 +278,7 @@ export default function SetupPage() {
               {analyzing ? (
                 <>
                   <span className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
-                  Analyzing...
+                  Analyzing Resume...
                 </>
               ) : (
                 "🔍 Analyze Resume"
@@ -263,38 +287,108 @@ export default function SetupPage() {
           </div>
         )}
 
-        {/* Step 2: Role Selection + Resume Preview */}
+        {/* Step 2: Full Configuration */}
         {step === 2 && analysis && (
-          <div className="animate-fade-in-up" style={{ maxWidth: 900, margin: "0 auto" }}>
+          <div className="animate-fade-in-up" style={{ maxWidth: 1050, margin: "0 auto" }}>
             <h1 style={styles.title}>
               Configure Your <span className="gradient-text">Interview</span>
             </h1>
 
-            <div style={styles.twoCol}>
-              {/* Left: Resume Analysis */}
+            <div style={styles.threeCol}>
+              {/* Left: Detailed Resume Analysis */}
               <div className="glass-card" style={styles.analysisCard}>
-                <h3 style={{ marginBottom: 16 }}>📋 Resume Analysis</h3>
+                <h3 style={{ marginBottom: 16 }}>📋 Resume Deep Analysis</h3>
+                
                 <div style={styles.analysisItem}>
                   <span className="label">Candidate</span>
-                  <p style={{ color: "var(--text-primary)", fontWeight: 600 }}>{analysis.name}</p>
+                  <p style={{ color: "var(--text-primary)", fontWeight: 600, fontSize: "1.05rem" }}>{analysis.name}</p>
                 </div>
+
                 {analysis.summary && (
                   <div style={styles.analysisItem}>
                     <span className="label">Summary</span>
-                    <p style={{ fontSize: "0.9rem" }}>{analysis.summary}</p>
+                    <p style={{ fontSize: "0.85rem", lineHeight: 1.6 }}>{analysis.summary}</p>
                   </div>
                 )}
+
+                {/* Programming Languages */}
+                {(analysis.programmingLanguages || []).length > 0 && (
+                  <div style={styles.analysisItem}>
+                    <span className="label">💻 Programming Languages ({langCount})</span>
+                    <div style={styles.tagsWrap}>
+                      {analysis.programmingLanguages.map((lang) => (
+                        <span key={lang.name} className={`badge ${lang.proficiency === 'primary' ? 'badge-coding' : 'badge-primary'}`}
+                          title={lang.context}
+                        >
+                          {lang.name} {lang.proficiency === 'primary' ? '★' : ''}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Technical Skills */}
                 <div style={styles.analysisItem}>
-                  <span className="label">Technical Skills</span>
+                  <span className="label">🛠️ Technical Skills</span>
                   <div style={styles.tagsWrap}>
-                    {(analysis.skills?.technical || []).slice(0, 10).map((s) => (
+                    {(analysis.skills?.technical || []).slice(0, 12).map((s) => (
                       <span key={s} className="badge badge-primary">{s}</span>
                     ))}
                   </div>
                 </div>
-                {analysis.strengths?.length > 0 && (
+
+                {/* Projects */}
+                {projectCount > 0 && (
                   <div style={styles.analysisItem}>
-                    <span className="label">Key Strengths</span>
+                    <span className="label">🚀 Projects ({projectCount})</span>
+                    {analysis.projects.slice(0, 4).map((p, i) => (
+                      <div key={i} style={styles.miniCard}>
+                        <p style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: "0.9rem" }}>{p.name}</p>
+                        <p style={{ fontSize: "0.8rem", marginTop: 2 }}>{p.description?.substring(0, 100)}{p.description?.length > 100 ? '...' : ''}</p>
+                        <div style={{ ...styles.tagsWrap, marginTop: 4 }}>
+                          {(p.technologies || []).slice(0, 4).map((t) => (
+                            <span key={t} style={styles.miniTag}>{t}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Internships */}
+                {internshipCount > 0 && (
+                  <div style={styles.analysisItem}>
+                    <span className="label">🎓 Internships ({internshipCount})</span>
+                    {analysis.internships.slice(0, 3).map((intern, i) => (
+                      <div key={i} style={styles.miniCard}>
+                        <p style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: "0.9rem" }}>
+                          {intern.title} @ {intern.company}
+                        </p>
+                        <p style={{ fontSize: "0.8rem", marginTop: 2 }}>{intern.duration}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Experience */}
+                {experienceCount > 0 && (
+                  <div style={styles.analysisItem}>
+                    <span className="label">💼 Experience ({experienceCount})</span>
+                    {analysis.experience.slice(0, 3).map((exp, i) => (
+                      <div key={i} style={styles.miniCard}>
+                        <p style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: "0.9rem" }}>
+                          {exp.title} @ {exp.company}
+                        </p>
+                        <p style={{ fontSize: "0.8rem", marginTop: 2 }}>{exp.duration}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Strengths */}
+                {(analysis.strengths || []).length > 0 && (
+                  <div style={styles.analysisItem}>
+                    <span className="label">💪 Key Strengths</span>
                     <div style={styles.tagsWrap}>
                       {analysis.strengths.slice(0, 5).map((s) => (
                         <span key={s} className="badge badge-accent">{s}</span>
@@ -302,12 +396,37 @@ export default function SetupPage() {
                     </div>
                   </div>
                 )}
+
+                {/* Achievements */}
+                {(analysis.achievements || []).length > 0 && (
+                  <div style={styles.analysisItem}>
+                    <span className="label">🏆 Achievements</span>
+                    <div style={styles.tagsWrap}>
+                      {analysis.achievements.slice(0, 4).map((a) => (
+                        <span key={a} className="badge badge-warm">{a}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Interview Focus Areas */}
+                {(analysis.interviewFocusAreas || []).length > 0 && (
+                  <div style={styles.analysisItem}>
+                    <span className="label">🎯 AI Will Probe</span>
+                    <ul style={{ paddingLeft: 16, margin: 0 }}>
+                      {analysis.interviewFocusAreas.slice(0, 3).map((area, i) => (
+                        <li key={i} style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 4 }}>{area}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               {/* Right: Configuration */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                <div className="glass-card" style={{ padding: "24px" }}>
-                  <label className="label" htmlFor="role-select">Target Role</label>
+              <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                {/* Target Role */}
+                <div className="glass-card" style={{ padding: "20px" }}>
+                  <label className="label" htmlFor="role-select">🎯 Target Role</label>
                   <select
                     className="select"
                     value={targetRole}
@@ -321,13 +440,29 @@ export default function SetupPage() {
                   </select>
                 </div>
 
-                <div className="glass-card" style={{ padding: "24px" }}>
-                  <span className="label">Difficulty Level</span>
+                {/* Target Company */}
+                <div className="glass-card" style={{ padding: "20px" }}>
+                  <label className="label" htmlFor="company-input">🏢 Target Company</label>
+                  <input
+                    type="text"
+                    className="company-input"
+                    value={targetCompany}
+                    onChange={(e) => setTargetCompany(e.target.value)}
+                    placeholder="e.g. Google, Amazon, TCS, Startup..."
+                    id="company-input"
+                  />
+                  <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 6 }}>
+                    Questions will be tailored to this company&apos;s interview style
+                  </p>
+                </div>
+
+                {/* Difficulty Level */}
+                <div className="glass-card" style={{ padding: "20px" }}>
+                  <span className="label">📊 Difficulty Level</span>
                   <div style={styles.difficultyGrid}>
                     {DIFFICULTY_LEVELS.map((level) => (
                       <button
                         key={level.value}
-                        className={`glass-card ${difficulty === level.value ? "" : ""}`}
                         style={{
                           ...styles.difficultyCard,
                           borderColor: difficulty === level.value ? "var(--primary-500)" : "var(--border-subtle)",
@@ -335,14 +470,46 @@ export default function SetupPage() {
                         }}
                         onClick={() => setDifficulty(level.value)}
                       >
-                        <span style={{ fontSize: "1.5rem" }}>{level.label.split(" ")[0]}</span>
-                        <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: "0.95rem" }}>
+                        <span style={{ fontSize: "1.3rem" }}>{level.label.split(" ")[0]}</span>
+                        <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: "0.85rem" }}>
                           {level.label.split(" ").slice(1).join(" ")}
                         </span>
-                        <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{level.desc}</span>
+                        <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{level.desc}</span>
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Interview Type */}
+                <div className="glass-card" style={{ padding: "20px" }}>
+                  <span className="label">📝 Interview Type</span>
+                  <div style={styles.interviewTypeGrid}>
+                    {INTERVIEW_TYPES.map((type) => (
+                      <button
+                        key={type.value}
+                        className={`interview-type-card ${interviewType === type.value ? 'active' : ''}`}
+                        onClick={() => setInterviewType(type.value)}
+                      >
+                        <span style={{ fontSize: "1.5rem" }}>{type.icon}</span>
+                        <span style={{ fontWeight: 600, fontSize: "0.85rem" }}>{type.label}</span>
+                        <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", lineHeight: 1.3 }}>{type.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Interview Summary */}
+                <div className="glass-card" style={{ padding: "16px 20px", background: "rgba(99, 102, 241, 0.05)" }}>
+                  <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                    <strong style={{ color: "var(--text-primary)" }}>Interview Preview:</strong>{" "}
+                    {interviewType === "full" ? "~20 questions • ~30 min" : 
+                     interviewType === "resume" ? "~10 questions • ~15 min" :
+                     interviewType === "technical" ? "~12 questions • ~25 min" :
+                     "~10 questions • ~25 min"} 
+                    {targetCompany ? ` • ${targetCompany} style` : ""} 
+                    • {difficulty} level
+                    {langCount > 0 ? ` • Coding in ${analysis.programmingLanguages[0].name}` : ""}
+                  </p>
                 </div>
 
                 {error && <p style={styles.error}>⚠️ {error}</p>}
@@ -395,17 +562,27 @@ const styles = {
   error: {
     color: "var(--danger-400)", marginTop: 12, fontSize: "0.9rem", textAlign: "center",
   },
-  twoCol: {
-    display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start",
+  threeCol: {
+    display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 24, alignItems: "start",
   },
-  analysisCard: { padding: "24px" },
+  analysisCard: { padding: "24px", maxHeight: "calc(100vh - 160px)", overflowY: "auto" },
   analysisItem: { marginBottom: 16 },
   tagsWrap: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 },
-  difficultyGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 },
+  miniCard: {
+    padding: "10px 12px", marginTop: 6,
+    background: "rgba(255,255,255,0.02)", borderRadius: "var(--radius-sm)",
+    border: "1px solid var(--border-subtle)",
+  },
+  miniTag: {
+    display: "inline-block", padding: "1px 6px", borderRadius: "var(--radius-sm)",
+    fontSize: "0.7rem", background: "rgba(99,102,241,0.1)", color: "var(--primary-300)",
+  },
+  difficultyGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 },
   difficultyCard: {
     display: "flex", flexDirection: "column", alignItems: "center",
-    gap: 4, padding: "16px 8px", border: "1px solid", borderRadius: "var(--radius-md)",
+    gap: 3, padding: "12px 6px", border: "1px solid", borderRadius: "var(--radius-md)",
     cursor: "pointer", transition: "all 0.2s", background: "none",
     fontFamily: "var(--font-sans)",
   },
+  interviewTypeGrid: { display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 },
 };

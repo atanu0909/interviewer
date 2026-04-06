@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
-function RadarChart({ scores, size = 280 }) {
+function RadarChart({ scores, size = 300 }) {
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -18,7 +18,7 @@ function RadarChart({ scores, size = 280 }) {
 
     const cx = size / 2;
     const cy = size / 2;
-    const radius = size / 2 - 40;
+    const radius = size / 2 - 44;
     const labels = Object.keys(scores);
     const values = Object.values(scores);
     const n = labels.length;
@@ -84,11 +84,11 @@ function RadarChart({ scores, size = 280 }) {
 
     // Draw labels
     ctx.fillStyle = "#94a3b8";
-    ctx.font = "11px Inter, sans-serif";
+    ctx.font = "10px Inter, sans-serif";
     ctx.textAlign = "center";
     for (let i = 0; i < n; i++) {
       const angle = i * angleStep - Math.PI / 2;
-      const labelR = radius + 24;
+      const labelR = radius + 28;
       const x = cx + labelR * Math.cos(angle);
       const y = cy + labelR * Math.sin(angle);
       const label = labels[i].replace(/([A-Z])/g, " $1").trim();
@@ -134,6 +134,33 @@ function CircularScore({ score, grade, size = 160 }) {
   );
 }
 
+function HiringDecision({ decision }) {
+  if (!decision) return null;
+  const colorMap = { yes: "#10b981", maybe: "#f97316", no: "#ef4444" };
+  const emojiMap = { yes: "✅", maybe: "🤔", no: "❌" };
+  const labelMap = { yes: "Would Hire", maybe: "Maybe", no: "Would Not Hire" };
+  const color = colorMap[decision.wouldHire] || "#f97316";
+  
+  return (
+    <div className="glass-card" style={{ padding: "20px", textAlign: "center" }}>
+      <span style={{ fontSize: "2.5rem", display: "block", marginBottom: 8 }}>
+        {emojiMap[decision.wouldHire] || "🤔"}
+      </span>
+      <p style={{ fontWeight: 700, color, fontSize: "1.1rem" }}>
+        {labelMap[decision.wouldHire] || "Undecided"}
+      </p>
+      <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: 2 }}>
+        Confidence: {decision.confidence || "medium"}
+      </p>
+      {decision.reasoning && (
+        <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: 8, lineHeight: 1.5 }}>
+          {decision.reasoning}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function ResultsPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
@@ -163,6 +190,24 @@ export default function ResultsPage() {
 
   const scoreColor = (s) => s >= 7 ? "var(--accent-400)" : s >= 4 ? "var(--warm-400)" : "var(--danger-400)";
 
+  const getCategoryBadgeClass = (category) => {
+    const map = {
+      technical: "badge-primary",
+      behavioral: "badge-accent",
+      resume: "badge-warm",
+      project: "badge-project",
+      experience: "badge-experience",
+      coding: "badge-coding",
+      situational: "badge-primary",
+      closing: "badge-accent",
+      "follow-up": "badge-warm",
+    };
+    return map[category] || "badge-primary";
+  };
+
+  const codingAnswers = answers.filter(a => a.category === "coding");
+  const hasCoding = codingAnswers.length > 0;
+
   return (
     <div style={{ position: "relative", minHeight: "100vh", overflow: "hidden" }}>
       <div className="bg-orb bg-orb-1" />
@@ -189,13 +234,13 @@ export default function ResultsPage() {
           Here&apos;s your comprehensive performance analysis
         </p>
 
-        {/* Top Row: Score + Radar */}
+        {/* Top Row: Score + Radar + Hiring Decision */}
         <div style={styles.topGrid} className="animate-fade-in-up delay-1">
           {/* Overall Score */}
           <div className="glass-card" style={styles.scorePanel}>
             <h3 style={{ marginBottom: 16 }}>Overall Performance</h3>
             <CircularScore score={report.overallScore || 0} grade={report.grade || "—"} />
-            <p style={{ marginTop: 16, fontSize: "0.95rem", color: "var(--text-secondary)", textAlign: "center", maxWidth: 300 }}>
+            <p style={{ marginTop: 16, fontSize: "0.9rem", color: "var(--text-secondary)", textAlign: "center", maxWidth: 300, lineHeight: 1.6 }}>
               {report.summary || "Interview completed."}
             </p>
             {report.readinessLevel && (
@@ -216,7 +261,34 @@ export default function ResultsPage() {
               <p style={{ color: "var(--text-muted)", textAlign: "center" }}>No detailed scores available</p>
             )}
           </div>
+
+          {/* Hiring Decision */}
+          {report.mockScore && (
+            <HiringDecision decision={report.mockScore} />
+          )}
         </div>
+
+        {/* Company Readiness + Resume Authenticity */}
+        {(report.companyReadiness || report.resumeAuthenticity) && (
+          <div style={styles.swGrid} className="animate-fade-in-up delay-2">
+            {report.companyReadiness && (
+              <div className="glass-card" style={styles.swCard}>
+                <h3 style={{ marginBottom: 14, color: "#fbbf24" }}>🏢 Company Readiness</h3>
+                <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                  {report.companyReadiness}
+                </p>
+              </div>
+            )}
+            {report.resumeAuthenticity && (
+              <div className="glass-card" style={styles.swCard}>
+                <h3 style={{ marginBottom: 14, color: "#c084fc" }}>🔍 Resume Authenticity</h3>
+                <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                  {report.resumeAuthenticity}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Strengths & Weaknesses */}
         <div style={styles.swGrid} className="animate-fade-in-up delay-2">
@@ -244,6 +316,55 @@ export default function ResultsPage() {
           </div>
         </div>
 
+        {/* Coding Feedback Section */}
+        {hasCoding && report.codingFeedback && (
+          <div className="glass-card animate-fade-in-up delay-3" style={{ padding: "24px", marginBottom: 24 }}>
+            <h3 style={{ marginBottom: 16, color: "#22d3ee" }}>💻 Coding Performance</h3>
+            <div style={styles.swGrid2}>
+              <div>
+                <span className="label">Overall Coding Score</span>
+                <p style={{
+                  fontSize: "2rem", fontWeight: 800,
+                  color: (report.codingFeedback.overallCodingScore || 0) >= 7 ? "var(--accent-400)" :
+                    (report.codingFeedback.overallCodingScore || 0) >= 4 ? "var(--warm-400)" : "var(--danger-400)",
+                }}>
+                  {report.codingFeedback.overallCodingScore || "—"}/10
+                </p>
+              </div>
+              <div>
+                <span className="label">Language Proficiency</span>
+                <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                  {report.codingFeedback.languageProficiency || "N/A"}
+                </p>
+              </div>
+            </div>
+            {report.codingFeedback.strengths?.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <span className="label" style={{ color: "#22d3ee" }}>Coding Strengths</span>
+                <ul style={styles.swList}>
+                  {report.codingFeedback.strengths.map((s, i) => (
+                    <li key={i} style={styles.swItem}>
+                      <span style={{ color: "#22d3ee", marginRight: 8 }}>✓</span>{s}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {report.codingFeedback.improvements?.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <span className="label" style={{ color: "var(--warm-400)" }}>Coding Improvements</span>
+                <ul style={styles.swList}>
+                  {report.codingFeedback.improvements.map((s, i) => (
+                    <li key={i} style={styles.swItem}>
+                      <span style={{ color: "var(--warm-400)", marginRight: 8 }}>→</span>{s}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Tips */}
         {report.tips && report.tips.length > 0 && (
           <div className="glass-card animate-fade-in-up delay-3" style={styles.tipsCard}>
@@ -252,7 +373,7 @@ export default function ResultsPage() {
               {report.tips.map((tip, i) => (
                 <div key={i} style={styles.tipItem}>
                   <span style={styles.tipNum}>{i + 1}</span>
-                  <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)" }}>{tip}</p>
+                  <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>{tip}</p>
                 </div>
               ))}
             </div>
@@ -295,16 +416,17 @@ export default function ResultsPage() {
                       }}>
                         {a.score}
                       </span>
-                      <span className={`badge ${
-                        a.category === "technical" ? "badge-primary" :
-                        a.category === "behavioral" ? "badge-accent" :
-                        a.category === "resume" ? "badge-warm" : "badge-primary"
-                      }`} style={{ fontSize: "0.65rem" }}>
+                      <span className={`badge ${getCategoryBadgeClass(a.category)}`} style={{ fontSize: "0.65rem" }}>
                         {a.category}
                       </span>
+                      {a.category === "coding" && a.codingLanguage && (
+                        <span className="badge badge-coding" style={{ fontSize: "0.6rem" }}>
+                          {a.codingLanguage}
+                        </span>
+                      )}
                     </div>
                     <p style={{ color: "var(--text-primary)", fontSize: "0.95rem", fontWeight: 500 }}>
-                      {a.question}
+                      {a.question?.length > 120 ? a.question.substring(0, 120) + "..." : a.question}
                     </p>
                   </div>
                   <span style={{ color: "var(--text-muted)", fontSize: "1.2rem", marginLeft: 12 }}>
@@ -314,12 +436,64 @@ export default function ResultsPage() {
 
                 {expandedQ === i && (
                   <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border-subtle)" }}>
-                    <div style={{ marginBottom: 10 }}>
-                      <span className="label">Your Answer</span>
-                      <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                        {a.answer || "(No response)"}
-                      </p>
-                    </div>
+                    {/* Full question for coding */}
+                    {a.category === "coding" && a.question?.length > 120 && (
+                      <div style={{ marginBottom: 12 }}>
+                        <span className="label">Full Question</span>
+                        <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                          {a.question}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Code submission */}
+                    {a.codeSubmission ? (
+                      <div style={{ marginBottom: 12 }}>
+                        <span className="label">Your Code</span>
+                        <div className="code-result">
+                          {a.codeSubmission}
+                        </div>
+                        {a.correctness !== undefined && (
+                          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                            <span className={`badge ${a.correctness ? "badge-accent" : "badge-warm"}`}>
+                              {a.correctness ? "✓ Correct" : "✗ Issues Found"}
+                            </span>
+                            {a.timeComplexity && (
+                              <span className="badge badge-primary">Time: {a.timeComplexity}</span>
+                            )}
+                            {a.spaceComplexity && (
+                              <span className="badge">Space: {a.spaceComplexity}</span>
+                            )}
+                          </div>
+                        )}
+                        {a.codeReview && (
+                          <div style={{ marginTop: 10 }}>
+                            <span className="label">Code Review</span>
+                            <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                              {a.codeReview}
+                            </p>
+                          </div>
+                        )}
+                        {a.suggestions?.length > 0 && (
+                          <div style={{ marginTop: 10 }}>
+                            <span className="label">Suggestions</span>
+                            <ul style={{ paddingLeft: 16, margin: 0 }}>
+                              {a.suggestions.map((s, j) => (
+                                <li key={j} style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: 4 }}>{s}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ marginBottom: 10 }}>
+                        <span className="label">Your Answer</span>
+                        <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                          {a.answer || "(No response)"}
+                        </p>
+                      </div>
+                    )}
+
                     {a.feedback && (
                       <div>
                         <span className="label">Feedback</span>
@@ -328,7 +502,7 @@ export default function ResultsPage() {
                         </p>
                       </div>
                     )}
-                    <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+                    <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <span className="badge" style={{ fontSize: "0.7rem" }}>
                         ⏱️ {a.timeTaken ? `${a.timeTaken}s` : "—"}
                       </span>
@@ -352,7 +526,7 @@ export default function ResultsPage() {
         <div className="glass-card" style={{ padding: "32px", textAlign: "center", marginBottom: 40 }}>
           <h3 style={{ marginBottom: 8 }}>Ready for another round?</h3>
           <p style={{ color: "var(--text-secondary)", marginBottom: 20 }}>
-            Practice makes perfect. Try a different role or difficulty level!
+            Practice makes perfect. Try a different role, company, or difficulty level!
           </p>
           <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
             <button className="btn btn-primary btn-lg" onClick={() => router.push("/setup")} id="new-interview-btn">
@@ -379,7 +553,7 @@ const styles = {
   },
   main: { paddingTop: 96, position: "relative", zIndex: 1 },
   topGrid: {
-    display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 24,
+    display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 24, marginBottom: 24, alignItems: "start",
   },
   scorePanel: {
     padding: "28px", display: "flex", flexDirection: "column", alignItems: "center",
@@ -387,6 +561,9 @@ const styles = {
   radarPanel: { padding: "28px" },
   swGrid: {
     display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 24,
+  },
+  swGrid2: {
+    display: "grid", gridTemplateColumns: "auto 1fr", gap: 24, alignItems: "start",
   },
   swCard: { padding: "24px" },
   swList: { listStyle: "none" },

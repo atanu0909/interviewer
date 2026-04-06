@@ -1,9 +1,87 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { SpeechManager } from "@/lib/speechManager";
 import { VoiceSynthesis } from "@/lib/voiceSynthesis";
 import { InterviewEngine, INTERVIEW_STATES } from "@/lib/interviewEngine";
+
+// Mini code editor component
+function CodeEditor({ language, onSubmit, disabled }) {
+  const [code, setCode] = useState("");
+  const textareaRef = useRef(null);
+
+  const lineCount = useMemo(() => {
+    return Math.max(code.split("\n").length, 10);
+  }, [code]);
+
+  const handleKeyDown = (e) => {
+    // Handle Tab key for indentation
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const start = e.target.selectionStart;
+      const end = e.target.selectionEnd;
+      const newCode = code.substring(0, start) + "  " + code.substring(end);
+      setCode(newCode);
+      requestAnimationFrame(() => {
+        e.target.selectionStart = e.target.selectionEnd = start + 2;
+      });
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="code-editor-wrap">
+        <div className="code-editor-header">
+          <span className="lang-tag">⟨/⟩ {language || "Code"}</span>
+          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+            {code.split("\n").length} lines
+          </span>
+        </div>
+        <div style={{ position: "relative" }}>
+          <div className="code-editor-lines" style={{ height: "100%" }}>
+            {Array.from({ length: lineCount }, (_, i) => (
+              <div key={i} style={{ height: "1.65em" }}>{i + 1}</div>
+            ))}
+          </div>
+          <textarea
+            ref={textareaRef}
+            className="code-editor-textarea"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={`// Write your ${language || 'code'} solution here...\n// Use Tab for indentation\n`}
+            spellCheck={false}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+          />
+        </div>
+        <div className="code-editor-footer">
+          <span>Press Tab for indent • Write clean, readable code</span>
+          <span>{code.length} chars</span>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <button
+          className="btn btn-primary btn-lg"
+          onClick={() => onSubmit(code)}
+          disabled={disabled || code.trim().length < 5}
+          style={{ flex: 1 }}
+          id="submit-code-btn"
+        >
+          💻 Submit Code
+        </button>
+        <button
+          className="btn btn-secondary"
+          onClick={() => setCode("")}
+          disabled={disabled}
+        >
+          Clear
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function InterviewPage() {
   const router = useRouter();
@@ -21,6 +99,8 @@ export default function InterviewPage() {
   const [questionTime, setQuestionTime] = useState(0);
   const [displayedQuestion, setDisplayedQuestion] = useState("");
   const [showHint, setShowHint] = useState("");
+  const [isCodingMode, setIsCodingMode] = useState(false);
+  const [interviewMeta, setInterviewMeta] = useState({});
 
   const engineRef = useRef(null);
   const speechRef = useRef(null);
@@ -38,7 +118,8 @@ export default function InterviewPage() {
       return;
     }
 
-    const { questions, resumeAnalysis, resumeText, targetRole, difficulty } = JSON.parse(data);
+    const { questions, resumeAnalysis, resumeText, targetRole, difficulty, targetCompany, interviewType } = JSON.parse(data);
+    setInterviewMeta({ targetRole, difficulty, targetCompany, interviewType });
 
     // Init Voice Synthesis
     const voice = new VoiceSynthesis({
@@ -56,6 +137,8 @@ export default function InterviewPage() {
       resumeText,
       targetRole,
       difficulty,
+      targetCompany,
+      interviewType,
       onStateChange: (state) => {
         setInterviewState(state);
         if (state === INTERVIEW_STATES.ASKING) {
@@ -63,14 +146,21 @@ export default function InterviewPage() {
           setTranscript("");
           setInterimText("");
           setShowHint("");
+          setIsCodingMode(false);
         } else if (state === INTERVIEW_STATES.LISTENING) {
           setStatusMessage("Your turn — speak your answer");
+          setIsCodingMode(false);
+        } else if (state === INTERVIEW_STATES.CODING) {
+          setStatusMessage("Write your code solution below");
+          setIsCodingMode(true);
         } else if (state === INTERVIEW_STATES.PROCESSING) {
-          setStatusMessage("Evaluating your answer...");
+          setStatusMessage("Evaluating your response...");
         } else if (state === INTERVIEW_STATES.TRANSITIONING) {
           setStatusMessage("Moving to next question...");
+          setIsCodingMode(false);
         } else if (state === INTERVIEW_STATES.COMPLETED) {
           setStatusMessage("Interview complete!");
+          setIsCodingMode(false);
         }
       },
       onQuestionChange: (question, prog) => {
@@ -82,19 +172,25 @@ export default function InterviewPage() {
         const text = question.question;
         setDisplayedQuestion("");
         let i = 0;
+        const typeSpeed = question.category === "coding" ? 15 : 25; // Faster for coding questions
         const typeInterval = setInterval(() => {
           if (i < text.length) {
             setDisplayedQuestion(text.substring(0, i + 1));
             i++;
           } else {
             clearInterval(typeInterval);
-            // Speak the question
-            voice.speak(text).then(() => {
+            // Speak the question (shorter version for coding questions)
+            const speakText = question.category === "coding" 
+              ? text.split("\n")[0] + ". Please write your solution in the code editor below."
+              : text;
+            voice.speak(speakText).then(() => {
               engine.onQuestionSpoken();
-              startListening();
+              if (question.category !== "coding") {
+                startListening();
+              }
             });
           }
-        }, 25);
+        }, typeSpeed);
       },
       onScoreUpdate: (ans) => setAnswers([...ans]),
       onComplete: (report, ans) => {
@@ -111,6 +207,9 @@ export default function InterviewPage() {
         setStatusMessage(msg);
         voice.speak(msg);
       },
+      onCodingQuestion: (question) => {
+        // Already handled via state change to CODING
+      },
     });
     engineRef.current = engine;
 
@@ -122,7 +221,7 @@ export default function InterviewPage() {
     }, 1000);
 
     qTimerRef.current = setInterval(() => {
-      if (engine.questionStartTime && engine.state === INTERVIEW_STATES.LISTENING) {
+      if (engine.questionStartTime && (engine.state === INTERVIEW_STATES.LISTENING || engine.state === INTERVIEW_STATES.CODING)) {
         setQuestionTime(engine.getQuestionTime());
       }
     }, 1000);
@@ -192,6 +291,11 @@ export default function InterviewPage() {
     }
   }, [transcript, stopListening]);
 
+  const handleSubmitCode = useCallback((code) => {
+    voiceRef.current?.stop();
+    engineRef.current?.submitCode(code);
+  }, []);
+
   const handleStartInterview = useCallback(() => {
     engineRef.current?.start();
   }, []);
@@ -214,6 +318,21 @@ export default function InterviewPage() {
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
+  const getCategoryBadgeClass = (category) => {
+    const map = {
+      technical: "badge-primary",
+      behavioral: "badge-accent",
+      resume: "badge-warm",
+      project: "badge-project",
+      experience: "badge-experience",
+      coding: "badge-coding",
+      situational: "badge-primary",
+      closing: "badge-accent",
+      "follow-up": "badge-warm",
+    };
+    return map[category] || "badge-primary";
+  };
+
   if (!mounted) return null;
 
   const avgScore = answers.length > 0
@@ -231,11 +350,17 @@ export default function InterviewPage() {
           <div style={styles.logo}>
             <span>🎤</span>
             <span className="gradient-text" style={{ fontWeight: 800 }}>InterviewAI</span>
+            {interviewMeta.targetCompany && (
+              <span className="badge badge-company" style={{ marginLeft: 8 }}>
+                {interviewMeta.targetCompany}
+              </span>
+            )}
           </div>
           <div style={styles.topBarInfo}>
             <span className="badge badge-primary">Q {progress.current}/{progress.total}</span>
             <span className="badge">⏱️ {formatTime(totalTime)}</span>
             <span className="badge badge-accent">Avg: {avgScore}/10</span>
+            {isCodingMode && <span className="coding-pulse">💻 Coding Mode</span>}
           </div>
           <button className="btn btn-secondary" onClick={handleEndInterview} id="end-interview-btn" style={{ fontSize: "0.85rem" }}>
             End Interview
@@ -254,14 +379,17 @@ export default function InterviewPage() {
             <div className="glass-card" style={styles.startCard}>
               <div style={styles.avatarLarge}>🤖</div>
               <h2>Ready to Begin?</h2>
-              <p style={{ maxWidth: 400, margin: "12px auto 24px" }}>
-                Your interviewer is ready. Make sure your microphone is enabled
-                and you&apos;re in a quiet environment.
+              <p style={{ maxWidth: 420, margin: "12px auto 20px", lineHeight: 1.6 }}>
+                Your AI interviewer is ready{interviewMeta.targetCompany ? ` to simulate a ${interviewMeta.targetCompany}-style interview` : ""}.
+                Make sure your microphone is enabled.
               </p>
               <div style={styles.preflight}>
                 <span className="badge badge-accent">✓ Microphone access needed</span>
                 <span className="badge badge-primary">✓ {progress.total} questions prepared</span>
-                <span className="badge badge-warm">✓ ~15 min duration</span>
+                <span className="badge badge-warm">✓ {interviewMeta.interviewType === "full" ? "~30 min" : "~15-25 min"}</span>
+                {interviewMeta.targetCompany && (
+                  <span className="badge badge-company">✓ {interviewMeta.targetCompany} style</span>
+                )}
               </div>
               <button className="btn btn-primary btn-lg" onClick={handleStartInterview} id="begin-btn" style={{ marginTop: 24 }}>
                 🎙️ Start Interview
@@ -281,6 +409,7 @@ export default function InterviewPage() {
                   ...styles.avatar,
                   ...(isSpeaking ? styles.avatarSpeaking : {}),
                   ...(interviewState === INTERVIEW_STATES.LISTENING ? styles.avatarListening : {}),
+                  ...(isCodingMode ? styles.avatarCoding : {}),
                 }}>
                   {isSpeaking && <div style={styles.avatarPulse} />}
                   <span style={{ fontSize: "2.5rem", position: "relative", zIndex: 2 }}>🤖</span>
@@ -291,11 +420,14 @@ export default function InterviewPage() {
                     fontSize: "0.8rem",
                     color: isSpeaking ? "var(--primary-400)" :
                       interviewState === INTERVIEW_STATES.LISTENING ? "var(--accent-400)" :
+                      isCodingMode ? "#22d3ee" :
+                      interviewState === INTERVIEW_STATES.PROCESSING ? "var(--warm-400)" :
                       "var(--text-muted)",
                   }}>
                     {isSpeaking ? "Speaking..." :
                       interviewState === INTERVIEW_STATES.LISTENING ? "Listening to you..." :
-                      interviewState === INTERVIEW_STATES.PROCESSING ? "Thinking..." : "Ready"}
+                      isCodingMode ? "Waiting for your code..." :
+                      interviewState === INTERVIEW_STATES.PROCESSING ? "Evaluating..." : "Ready"}
                   </p>
                 </div>
               </div>
@@ -304,19 +436,26 @@ export default function InterviewPage() {
               <div className="glass-card" style={styles.questionCard}>
                 {currentQuestion && (
                   <>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-                      <span className={`badge ${
-                        currentQuestion.category === "technical" ? "badge-primary" :
-                        currentQuestion.category === "behavioral" ? "badge-accent" :
-                        currentQuestion.category === "resume" ? "badge-warm" : "badge-primary"
-                      }`}>
-                        {currentQuestion.category}
-                      </span>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <span className={`badge ${getCategoryBadgeClass(currentQuestion.category)}`}>
+                          {currentQuestion.category}
+                        </span>
+                        {currentQuestion.category === "coding" && (
+                          <span className="badge badge-coding">{currentQuestion.codingLanguage || "Code"}</span>
+                        )}
+                      </div>
                       <span style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>
                         ⏱️ {formatTime(questionTime)}
                       </span>
                     </div>
-                    <p style={{ fontSize: "1.15rem", color: "var(--text-primary)", lineHeight: 1.6, fontWeight: 500 }}>
+                    <p style={{
+                      fontSize: currentQuestion.category === "coding" ? "1rem" : "1.15rem",
+                      color: "var(--text-primary)",
+                      lineHeight: 1.7,
+                      fontWeight: 500,
+                      whiteSpace: "pre-wrap",
+                    }}>
                       {displayedQuestion}
                       {displayedQuestion.length < (currentQuestion.question?.length || 0) && (
                         <span style={{ borderRight: "2px solid var(--primary-400)", animation: "blink-caret 0.75s step-end infinite", marginLeft: 2 }} />
@@ -335,53 +474,72 @@ export default function InterviewPage() {
               )}
             </div>
 
-            {/* Right: Transcript + Controls */}
+            {/* Right: Response area (Voice OR Code Editor) */}
             <div style={styles.answerPanel}>
-              {/* Audio Visualizer */}
-              <div style={styles.visualizer}>
-                {[...Array(20)].map((_, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      width: 4,
-                      borderRadius: 2,
-                      background: isListening ? "var(--gradient-primary)" : "var(--gray-700)",
-                      height: isListening ? `${6 + Math.random() * 28}px` : "4px",
-                      transition: "height 0.15s ease",
-                      animation: isListening ? `speaking-wave ${0.8 + Math.random() * 0.8}s ease-in-out infinite ${i * 0.05}s` : "none",
-                    }}
+              {/* Coding Mode */}
+              {isCodingMode ? (
+                <div className="animate-fade-in">
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                    <span className="coding-pulse">💻 Coding Challenge</span>
+                    <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                      Write your solution below
+                    </span>
+                  </div>
+                  <CodeEditor
+                    language={currentQuestion?.codingLanguage || "code"}
+                    onSubmit={handleSubmitCode}
+                    disabled={interviewState === INTERVIEW_STATES.PROCESSING}
                   />
-                ))}
-              </div>
+                </div>
+              ) : (
+                <>
+                  {/* Audio Visualizer */}
+                  <div style={styles.visualizer}>
+                    {[...Array(20)].map((_, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          width: 4,
+                          borderRadius: 2,
+                          background: isListening ? "var(--gradient-primary)" : "var(--gray-700)",
+                          height: isListening ? `${6 + Math.random() * 28}px` : "4px",
+                          transition: "height 0.15s ease",
+                          animation: isListening ? `speaking-wave ${0.8 + Math.random() * 0.8}s ease-in-out infinite ${i * 0.05}s` : "none",
+                        }}
+                      />
+                    ))}
+                  </div>
 
-              {/* Transcript */}
-              <div className="glass-card" style={styles.transcriptCard}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <span className="label" style={{ margin: 0 }}>Your Response</span>
-                  {isListening && (
-                    <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.75rem", color: "var(--accent-400)" }}>
-                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent-500)", animation: "pulse-glow 1.5s infinite" }} />
-                      Recording
-                    </span>
-                  )}
-                </div>
-                <div style={styles.transcriptArea}>
-                  {transcript || interimText ? (
-                    <>
-                      <span style={{ color: "var(--text-primary)" }}>{transcript}</span>
-                      {interimText && (
-                        <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}> {interimText}</span>
+                  {/* Transcript */}
+                  <div className="glass-card" style={styles.transcriptCard}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span className="label" style={{ margin: 0 }}>Your Response</span>
+                      {isListening && (
+                        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.75rem", color: "var(--accent-400)" }}>
+                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent-500)", animation: "pulse-glow 1.5s infinite" }} />
+                          Recording
+                        </span>
                       )}
-                    </>
-                  ) : (
-                    <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
-                      {interviewState === INTERVIEW_STATES.LISTENING
-                        ? "Start speaking your answer..."
-                        : "Waiting for question..."}
-                    </span>
-                  )}
-                </div>
-              </div>
+                    </div>
+                    <div style={styles.transcriptArea}>
+                      {transcript || interimText ? (
+                        <>
+                          <span style={{ color: "var(--text-primary)" }}>{transcript}</span>
+                          {interimText && (
+                            <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}> {interimText}</span>
+                          )}
+                        </>
+                      ) : (
+                        <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
+                          {interviewState === INTERVIEW_STATES.LISTENING
+                            ? "Start speaking your answer..."
+                            : "Waiting for question..."}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Status */}
               <p style={styles.statusMessage}>{statusMessage}</p>
@@ -407,10 +565,20 @@ export default function InterviewPage() {
                     </button>
                   </>
                 )}
+                {interviewState === INTERVIEW_STATES.CODING && (
+                  <button
+                    className="btn btn-secondary"
+                    onClick={handleSkip}
+                    id="skip-coding-btn"
+                    style={{ marginLeft: "auto" }}
+                  >
+                    Skip Coding →
+                  </button>
+                )}
                 {interviewState === INTERVIEW_STATES.PROCESSING && (
                   <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "center", width: "100%" }}>
                     <span className="spinner" />
-                    <span style={{ color: "var(--text-secondary)" }}>Evaluating your answer...</span>
+                    <span style={{ color: "var(--text-secondary)" }}>Evaluating your response...</span>
                   </div>
                 )}
               </div>
@@ -419,9 +587,14 @@ export default function InterviewPage() {
               {answers.length > 0 && (
                 <div className="glass-card animate-fade-in" style={styles.lastScore}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
-                      Previous Q Score
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                        Previous Q
+                      </span>
+                      <span className={`badge ${getCategoryBadgeClass(answers[answers.length - 1].category)}`} style={{ fontSize: "0.65rem" }}>
+                        {answers[answers.length - 1].category}
+                      </span>
+                    </div>
                     <span style={{
                       fontWeight: 700,
                       fontSize: "1.25rem",
@@ -432,7 +605,7 @@ export default function InterviewPage() {
                     </span>
                   </div>
                   {answers[answers.length - 1].feedback && (
-                    <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: 6 }}>
+                    <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: 6, lineHeight: 1.5 }}>
                       {answers[answers.length - 1].feedback}
                     </p>
                   )}
@@ -470,7 +643,7 @@ const styles = {
   topBarInner: {
     display: "flex", justifyContent: "space-between", alignItems: "center", height: 56,
   },
-  topBarInfo: { display: "flex", gap: 8 },
+  topBarInfo: { display: "flex", gap: 8, alignItems: "center" },
   logo: { display: "flex", alignItems: "center", gap: 8 },
   main: { paddingTop: 80, paddingBottom: 40, position: "relative", zIndex: 1 },
   centerPanel: {
@@ -478,7 +651,7 @@ const styles = {
     minHeight: "calc(100vh - 140px)",
   },
   startCard: {
-    padding: "48px 40px", textAlign: "center", maxWidth: 500,
+    padding: "48px 40px", textAlign: "center", maxWidth: 520,
   },
   avatarLarge: { fontSize: "4rem", marginBottom: 16 },
   preflight: { display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" },
@@ -502,6 +675,10 @@ const styles = {
   avatarListening: {
     borderColor: "var(--accent-500)",
     boxShadow: "0 0 20px rgba(16, 185, 129, 0.3)",
+  },
+  avatarCoding: {
+    borderColor: "#22d3ee",
+    boxShadow: "0 0 20px rgba(6, 182, 212, 0.3)",
   },
   avatarPulse: {
     position: "absolute", inset: -6, borderRadius: "50%",

@@ -1,9 +1,10 @@
-// Interview Engine — State machine coordinating speech, AI, and UI
+// Interview Engine — State machine coordinating speech, AI, coding, and UI
 
 export const INTERVIEW_STATES = {
   IDLE: 'idle',
   ASKING: 'asking',           // TTS is speaking the question
   LISTENING: 'listening',     // Waiting for user answer
+  CODING: 'coding',           // Waiting for user to write code
   PROCESSING: 'processing',  // Evaluating answer with Gemini
   GIVING_HINT: 'giving_hint', // Providing a hint
   TRANSITIONING: 'transitioning', // Moving to next question
@@ -14,8 +15,8 @@ export class InterviewEngine {
   constructor(options = {}) {
     this.state = INTERVIEW_STATES.IDLE;
     
-    // Sort questions to ensure resume/project/experience questions come FIRST
-    const categoryOrder = { resume: 0, technical: 1, behavioral: 2, situational: 3, 'follow-up': 4 };
+    // Sort questions to ensure proper interview flow order
+    const categoryOrder = { resume: 0, project: 1, experience: 2, technical: 3, coding: 4, behavioral: 5, situational: 6, closing: 7, 'follow-up': 8 };
     this.questions = (options.questions || []).slice().sort((a, b) => {
       return (categoryOrder[a.category] ?? 99) - (categoryOrder[b.category] ?? 99);
     });
@@ -24,6 +25,8 @@ export class InterviewEngine {
     this.resumeText = options.resumeText || '';
     this.targetRole = options.targetRole || '';
     this.difficulty = options.difficulty || 'mid';
+    this.targetCompany = options.targetCompany || '';
+    this.interviewType = options.interviewType || 'full';
     this.currentIndex = 0;
     this.answers = [];
     this.scores = [];
@@ -37,6 +40,7 @@ export class InterviewEngine {
     this.onComplete = options.onComplete || (() => {});
     this.onHint = options.onHint || (() => {});
     this.onEncouragement = options.onEncouragement || (() => {});
+    this.onCodingQuestion = options.onCodingQuestion || (() => {}); // NEW: triggers code editor
   }
 
   setState(newState) {
@@ -87,10 +91,17 @@ export class InterviewEngine {
 
   // Called when TTS finishes speaking the question
   onQuestionSpoken() {
-    this.setState(INTERVIEW_STATES.LISTENING);
+    const question = this.getCurrentQuestion();
+    if (question?.category === 'coding') {
+      // Switch to coding mode instead of listening
+      this.setState(INTERVIEW_STATES.CODING);
+      this.onCodingQuestion(question);
+    } else {
+      this.setState(INTERVIEW_STATES.LISTENING);
+    }
   }
 
-  // Called when user finishes answering
+  // Called when user finishes answering (voice)
   async submitAnswer(transcript) {
     this.setState(INTERVIEW_STATES.PROCESSING);
     
@@ -109,6 +120,7 @@ export class InterviewEngine {
           resumeText: this.resumeText,
           targetRole: this.targetRole,
           difficulty: this.difficulty,
+          targetCompany: this.targetCompany,
         }),
       });
 
@@ -122,6 +134,7 @@ export class InterviewEngine {
         score: evaluation.score,
         feedback: evaluation.feedback,
         followUp: evaluation.followUp,
+        authenticity: evaluation.authenticity,
       });
 
       this.scores.push(evaluation.score);
@@ -148,6 +161,65 @@ export class InterviewEngine {
         score: 5,
         feedback: 'Unable to evaluate - moving to next question.',
       });
+      this.nextQuestion();
+    }
+  }
+
+  // Called when user submits code (coding challenge)
+  async submitCode(code) {
+    this.setState(INTERVIEW_STATES.PROCESSING);
+    
+    const question = this.getCurrentQuestion();
+    const timeTaken = this.getQuestionTime();
+    
+    try {
+      const response = await fetch('/api/evaluate-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          language: question.codingLanguage || 'python',
+          problemStatement: question.question,
+          expectedApproach: question.expectedApproach || '',
+          difficulty: this.difficulty,
+          targetRole: this.targetRole,
+        }),
+      });
+
+      const evaluation = await response.json();
+
+      this.answers.push({
+        question: question.question,
+        category: 'coding',
+        answer: `[Code submitted in ${question.codingLanguage || 'unknown'}]`,
+        codeSubmission: code,
+        codingLanguage: question.codingLanguage,
+        timeTaken,
+        score: evaluation.score,
+        feedback: evaluation.feedback,
+        codeReview: evaluation.codeReview,
+        correctness: evaluation.correctness,
+        timeComplexity: evaluation.timeComplexity,
+        spaceComplexity: evaluation.spaceComplexity,
+        suggestions: evaluation.suggestions,
+      });
+
+      this.scores.push(evaluation.score);
+      this.onScoreUpdate(this.answers);
+      this.nextQuestion();
+    } catch (error) {
+      console.error('Failed to evaluate code:', error);
+      this.answers.push({
+        question: question.question,
+        category: 'coding',
+        answer: `[Code submitted]`,
+        codeSubmission: code,
+        timeTaken,
+        score: 5,
+        feedback: 'Unable to evaluate code - moving to next question.',
+      });
+      this.scores.push(5);
+      this.onScoreUpdate(this.answers);
       this.nextQuestion();
     }
   }
@@ -257,6 +329,7 @@ export class InterviewEngine {
           resumeAnalysis: this.resumeAnalysis,
           targetRole: this.targetRole,
           difficulty: this.difficulty,
+          targetCompany: this.targetCompany,
           totalTime: this.getElapsedTime(),
         }),
       });
