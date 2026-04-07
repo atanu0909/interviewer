@@ -40,7 +40,8 @@ export class InterviewEngine {
     this.onComplete = options.onComplete || (() => {});
     this.onHint = options.onHint || (() => {});
     this.onEncouragement = options.onEncouragement || (() => {});
-    this.onCodingQuestion = options.onCodingQuestion || (() => {}); // NEW: triggers code editor
+    this.onCodingQuestion = options.onCodingQuestion || (() => {}); // triggers code editor
+    this.onAutoSubmit = options.onAutoSubmit || (() => {}); // called when auto-submitting after silence
   }
 
   setState(newState) {
@@ -101,7 +102,7 @@ export class InterviewEngine {
     }
   }
 
-  // Called when user finishes answering (voice)
+  // Called when user finishes answering (voice — text mode)
   async submitAnswer(transcript) {
     this.setState(INTERVIEW_STATES.PROCESSING);
     
@@ -165,6 +166,80 @@ export class InterviewEngine {
     }
   }
 
+  // Called when user finishes answering (audio mode — direct audio analysis)
+  async submitAudioAnswer(audioBase64, mimeType) {
+    this.setState(INTERVIEW_STATES.PROCESSING);
+
+    const question = this.getCurrentQuestion();
+    const timeTaken = this.getQuestionTime();
+
+    try {
+      const response = await fetch('/api/evaluate-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audioBase64,
+          mimeType,
+          question: question.question,
+          category: question.category,
+          resumeContext: this.resumeAnalysis,
+          resumeText: this.resumeText,
+          targetRole: this.targetRole,
+          difficulty: this.difficulty,
+          targetCompany: this.targetCompany,
+        }),
+      });
+
+      const evaluation = await response.json();
+
+      this.answers.push({
+        question: question.question,
+        category: question.category,
+        answer: evaluation.transcript || '(Audio answer)',
+        timeTaken,
+        score: evaluation.score,
+        feedback: evaluation.feedback,
+        followUp: evaluation.followUp,
+        authenticity: evaluation.authenticity,
+        // Audio-specific metadata
+        audioMode: true,
+        confidence: evaluation.confidence,
+        speakingPace: evaluation.speakingPace,
+        clarity: evaluation.clarity,
+        fillerWords: evaluation.fillerWords,
+        speakingFeedback: evaluation.speakingFeedback,
+      });
+
+      this.scores.push(evaluation.score);
+      this.onScoreUpdate(this.answers);
+
+      // Check if there's a follow-up
+      if (evaluation.followUp && this.currentIndex < this.questions.length - 1) {
+        this.questions.splice(this.currentIndex + 1, 0, {
+          question: evaluation.followUp,
+          category: 'follow-up',
+          isFollowUp: true,
+        });
+      }
+
+      this.nextQuestion();
+    } catch (error) {
+      console.error('Failed to evaluate audio answer:', error);
+      this.answers.push({
+        question: question.question,
+        category: question.category,
+        answer: '(Audio evaluation failed)',
+        timeTaken,
+        score: 5,
+        feedback: 'Unable to evaluate audio - moving to next question.',
+        audioMode: true,
+      });
+      this.scores.push(5);
+      this.onScoreUpdate(this.answers);
+      this.nextQuestion();
+    }
+  }
+
   // Called when user submits code (coding challenge)
   async submitCode(code) {
     this.setState(INTERVIEW_STATES.PROCESSING);
@@ -224,16 +299,26 @@ export class InterviewEngine {
     }
   }
 
-  // Called when silence is detected (8s)
-  async handleSilence(partialTranscript) {
+  // Called when silence is detected (8s) — SMART auto-submit logic
+  // hasSpeech: whether the user spoke during this listening session
+  async handleSilence(partialTranscript, hasSpeech = false) {
     if (this.state !== INTERVIEW_STATES.LISTENING) return;
-    
-    // Check if user has said something meaningful
-    if (partialTranscript && partialTranscript.trim().length > 20) {
-      // User probably finished, submit the answer
-      return;
+
+    // ─── USER SPOKE + 8s SILENCE → They finished answering → AUTO-SUBMIT ───
+    if (hasSpeech && partialTranscript && partialTranscript.trim().length > 10) {
+      // Signal the UI that we're auto-submitting
+      this.onAutoSubmit('text');
+      return; // The interview page will handle the actual submission
     }
 
+    // ─── USER SPOKE + 8s SILENCE in AUDIO mode → signal auto-submit ───
+    if (hasSpeech && !partialTranscript) {
+      // Audio mode — no transcript available, but speech was detected via RMS
+      this.onAutoSubmit('audio');
+      return; // The interview page will stop recording + submit audio
+    }
+
+    // ─── USER NEVER SPOKE → They might be stuck → hint/encourage ───
     try {
       const response = await fetch('/api/detect-stuck', {
         method: 'POST',
@@ -258,15 +343,15 @@ export class InterviewEngine {
     }
   }
 
-  // Called on max silence (15s)
-  handleMaxSilence(partialTranscript) {
+  // Called on max silence (15s) — hard stop safety net
+  handleMaxSilence(partialTranscript, hasSpeech = false) {
     if (this.state !== INTERVIEW_STATES.LISTENING) return;
 
-    if (partialTranscript && partialTranscript.trim().length > 10) {
-      // Submit whatever they said
-      this.submitAnswer(partialTranscript);
+    // If user spoke something, submit whatever they said
+    if (hasSpeech || (partialTranscript && partialTranscript.trim().length > 10)) {
+      this.onAutoSubmit(partialTranscript ? 'text' : 'audio');
     } else {
-      // Skip this question
+      // No speech at all — skip this question
       this.answers.push({
         question: this.getCurrentQuestion()?.question,
         category: this.getCurrentQuestion()?.category,

@@ -7,7 +7,7 @@ export async function POST(request) {
   try {
     const { question, partialTranscript, silenceDuration } = await request.json();
 
-    // Quick check — if user said almost nothing
+    // Quick check — if user said almost nothing or no transcript (audio mode)
     if (!partialTranscript || partialTranscript.trim().length < 5) {
       if (silenceDuration >= 12) {
         return NextResponse.json({
@@ -15,9 +15,15 @@ export async function POST(request) {
           message: "No worries! Let's move on to the next question.",
         });
       }
+      if (silenceDuration >= 10) {
+        return NextResponse.json({
+          action: 'encourage',
+          message: "Take your time. You can also click 'Skip' to move to the next question.",
+        });
+      }
       return NextResponse.json({
         action: 'encourage',
-        message: "Take your time. It's okay to think about it. If you'd like, you can say 'skip' to move on.",
+        message: "Take your time. It's okay to think about it. Start speaking when you're ready.",
       });
     }
 

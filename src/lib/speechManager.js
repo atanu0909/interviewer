@@ -16,6 +16,7 @@ export class SpeechManager {
     this.restartAttempts = 0;
     this.maxRestartAttempts = 5;
     this.intentionallyStopped = false;
+    this.hasSpeechStarted = false;
 
     // Callbacks
     this.onResult = options.onResult || (() => {});
@@ -77,6 +78,7 @@ export class SpeechManager {
 
       // Reset silence timers on speech
       this.lastSpeechTime = Date.now();
+      this.hasSpeechStarted = true;
       this.onSpeechDetected();
       this._resetSilenceTimer();
     };
@@ -124,6 +126,7 @@ export class SpeechManager {
     this.transcript = '';
     this.interimTranscript = '';
     this.restartAttempts = 0;
+    this.hasSpeechStarted = false;
 
     try {
       this.recognition.start();
@@ -176,7 +179,7 @@ export class SpeechManager {
     this._clearSilenceTimer();
     this.silenceTimer = setTimeout(() => {
       if (!this.intentionallyStopped) {
-        this.onSilence(this.transcript);
+        this.onSilence(this.transcript, this.hasSpeechStarted);
       }
     }, this.silenceTimeout);
   }
@@ -200,7 +203,7 @@ export class SpeechManager {
     this._clearMaxSilenceTimer();
     this.maxSilenceTimer = setTimeout(() => {
       if (!this.intentionallyStopped) {
-        this.onMaxSilence(this.transcript);
+        this.onMaxSilence(this.transcript, this.hasSpeechStarted);
       }
     }, this.maxSilenceTimeout);
   }

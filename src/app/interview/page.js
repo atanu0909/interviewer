@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { SpeechManager } from "@/lib/speechManager";
+import { AudioRecorder } from "@/lib/audioRecorder";
 import { VoiceSynthesis } from "@/lib/voiceSynthesis";
 import { InterviewEngine, INTERVIEW_STATES } from "@/lib/interviewEngine";
 
@@ -83,6 +84,177 @@ function CodeEditor({ language, onSubmit, disabled }) {
   );
 }
 
+// Real waveform visualizer for audio mode
+function WaveformVisualizer({ audioLevel, isActive, waveformData }) {
+  const canvasRef = useRef(null);
+  const animFrameRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const width = canvas.width;
+    const height = canvas.height;
+
+    const draw = () => {
+      ctx.clearRect(0, 0, width, height);
+
+      if (!isActive) {
+        // Idle state: flat line
+        ctx.strokeStyle = "rgba(100, 116, 139, 0.3)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, height / 2);
+        ctx.lineTo(width, height / 2);
+        ctx.stroke();
+        return;
+      }
+
+      if (waveformData && waveformData.length > 0) {
+        // Real waveform from analyser
+        const gradient = ctx.createLinearGradient(0, 0, width, 0);
+        gradient.addColorStop(0, "rgba(99, 102, 241, 0.8)");
+        gradient.addColorStop(0.5, "rgba(16, 185, 129, 0.8)");
+        gradient.addColorStop(1, "rgba(99, 102, 241, 0.8)");
+
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+
+        const sliceWidth = width / waveformData.length;
+        let x = 0;
+
+        for (let i = 0; i < waveformData.length; i++) {
+          const v = waveformData[i] * 2.5 + 0.5; // Amplify and center
+          const y = (v * height) / 1;
+
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+          x += sliceWidth;
+        }
+
+        ctx.stroke();
+
+        // Glow effect
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = "rgba(99, 102, 241, 0.4)";
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      } else {
+        // Fallback: animated bars using audio level
+        const barCount = 40;
+        const barWidth = width / barCount - 2;
+        const centerY = height / 2;
+
+        for (let i = 0; i < barCount; i++) {
+          const normalized = audioLevel || 0;
+          const barHeight = Math.max(2, normalized * height * 0.8 * (0.5 + Math.random() * 0.5));
+
+          const hue = 230 + (i / barCount) * 80;
+          ctx.fillStyle = `hsla(${hue}, 70%, 60%, ${0.5 + normalized * 0.5})`;
+          ctx.fillRect(
+            i * (barWidth + 2),
+            centerY - barHeight / 2,
+            barWidth,
+            barHeight
+          );
+        }
+      }
+
+      if (isActive) {
+        animFrameRef.current = requestAnimationFrame(draw);
+      }
+    };
+
+    draw();
+
+    return () => {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+      }
+    };
+  }, [audioLevel, isActive, waveformData]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={400}
+      height={60}
+      style={{
+        width: "100%",
+        height: 60,
+        borderRadius: "var(--radius-md)",
+        background: isActive ? "rgba(99, 102, 241, 0.05)" : "transparent",
+        transition: "background 0.3s",
+      }}
+    />
+  );
+}
+
+// Mode toggle component
+function InputModeToggle({ mode, onModeChange, disabled }) {
+  return (
+    <div style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 4,
+      background: "var(--bg-glass)",
+      border: "1px solid var(--border-subtle)",
+      borderRadius: "var(--radius-lg)",
+      padding: 3,
+    }}>
+      <button
+        onClick={() => onModeChange("audio")}
+        disabled={disabled}
+        style={{
+          padding: "6px 14px",
+          borderRadius: "var(--radius-md)",
+          border: "none",
+          cursor: disabled ? "not-allowed" : "pointer",
+          fontSize: "0.78rem",
+          fontWeight: 600,
+          fontFamily: "var(--font-sans)",
+          transition: "all 0.25s",
+          background: mode === "audio"
+            ? "linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(168, 85, 247, 0.3))"
+            : "transparent",
+          color: mode === "audio" ? "var(--primary-300)" : "var(--text-muted)",
+          boxShadow: mode === "audio" ? "0 0 12px rgba(99, 102, 241, 0.2)" : "none",
+        }}
+        id="mode-audio-btn"
+      >
+        🎤 Live Audio AI
+      </button>
+      <button
+        onClick={() => onModeChange("text")}
+        disabled={disabled}
+        style={{
+          padding: "6px 14px",
+          borderRadius: "var(--radius-md)",
+          border: "none",
+          cursor: disabled ? "not-allowed" : "pointer",
+          fontSize: "0.78rem",
+          fontWeight: 600,
+          fontFamily: "var(--font-sans)",
+          transition: "all 0.25s",
+          background: mode === "text"
+            ? "linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(52, 211, 153, 0.3))"
+            : "transparent",
+          color: mode === "text" ? "var(--accent-300)" : "var(--text-muted)",
+          boxShadow: mode === "text" ? "0 0 12px rgba(16, 185, 129, 0.2)" : "none",
+        }}
+        id="mode-text-btn"
+      >
+        📝 Text Recognition
+      </button>
+    </div>
+  );
+}
+
+
 export default function InterviewPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
@@ -102,11 +274,22 @@ export default function InterviewPage() {
   const [isCodingMode, setIsCodingMode] = useState(false);
   const [interviewMeta, setInterviewMeta] = useState({});
 
+  // Audio mode state
+  const [inputMode, setInputMode] = useState("audio"); // "audio" or "text"
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [waveformData, setWaveformData] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [hasSpeechDetected, setHasSpeechDetected] = useState(false);
+  const [autoSubmitting, setAutoSubmitting] = useState(false);
+
   const engineRef = useRef(null);
   const speechRef = useRef(null);
+  const audioRecorderRef = useRef(null);
   const voiceRef = useRef(null);
   const timerRef = useRef(null);
   const qTimerRef = useRef(null);
+  const isAutoSubmittingRef = useRef(false);
 
   // Initialize
   useEffect(() => {
@@ -120,6 +303,11 @@ export default function InterviewPage() {
 
     const { questions, resumeAnalysis, resumeText, targetRole, difficulty, targetCompany, interviewType } = JSON.parse(data);
     setInterviewMeta({ targetRole, difficulty, targetCompany, interviewType });
+
+    // Check if AudioRecorder is supported — default to audio mode if yes
+    if (!AudioRecorder.isSupported()) {
+      setInputMode("text");
+    }
 
     // Init Voice Synthesis
     const voice = new VoiceSynthesis({
@@ -147,6 +335,10 @@ export default function InterviewPage() {
           setInterimText("");
           setShowHint("");
           setIsCodingMode(false);
+          setHasSpeechDetected(false);
+          setRecordingDuration(0);
+          setAutoSubmitting(false);
+          isAutoSubmittingRef.current = false;
         } else if (state === INTERVIEW_STATES.LISTENING) {
           setStatusMessage("Your turn — speak your answer");
           setIsCodingMode(false);
@@ -172,15 +364,14 @@ export default function InterviewPage() {
         const text = question.question;
         setDisplayedQuestion("");
         let i = 0;
-        const typeSpeed = question.category === "coding" ? 15 : 25; // Faster for coding questions
+        const typeSpeed = question.category === "coding" ? 15 : 25;
         const typeInterval = setInterval(() => {
           if (i < text.length) {
             setDisplayedQuestion(text.substring(0, i + 1));
             i++;
           } else {
             clearInterval(typeInterval);
-            // Speak the question (shorter version for coding questions)
-            const speakText = question.category === "coding" 
+            const speakText = question.category === "coding"
               ? text.split("\n")[0] + ". Please write your solution in the code editor below."
               : text;
             voice.speak(speakText).then(() => {
@@ -207,8 +398,42 @@ export default function InterviewPage() {
         setStatusMessage(msg);
         voice.speak(msg);
       },
-      onCodingQuestion: (question) => {
+      onCodingQuestion: () => {
         // Already handled via state change to CODING
+      },
+      // ─── SMART AUTO-SUBMIT: user spoke then went silent for 8s ───
+      onAutoSubmit: (mode) => {
+        if (isAutoSubmittingRef.current) return; // Prevent double-submit
+        isAutoSubmittingRef.current = true;
+        setAutoSubmitting(true);
+        setStatusMessage("✓ Answer detected — submitting automatically...");
+
+        // Brief delay to show the auto-submit message, then submit
+        setTimeout(async () => {
+          if (mode === 'audio') {
+            // Audio mode: stop recording and submit the audio
+            const result = await audioRecorderRef.current?.stop();
+            setIsRecording(false);
+            setIsListening(false);
+            if (result && result.base64) {
+              engine.submitAudioAnswer(result.base64, result.mimeType);
+            } else {
+              // Fallback: skip with no response
+              engine.skipQuestion();
+            }
+          } else {
+            // Text mode: stop speech recognition and submit transcript
+            const finalTranscript = speechRef.current?.stop() || '';
+            setIsListening(false);
+            if (finalTranscript && finalTranscript.trim().length > 0) {
+              engine.submitAnswer(finalTranscript);
+            } else {
+              engine.skipQuestion();
+            }
+          }
+          setAutoSubmitting(false);
+          isAutoSubmittingRef.current = false;
+        }, 1200); // 1.2s delay so user sees "submitting..." message
       },
     });
     engineRef.current = engine;
@@ -230,11 +455,15 @@ export default function InterviewPage() {
       clearInterval(timerRef.current);
       clearInterval(qTimerRef.current);
       speechRef.current?.destroy();
+      audioRecorderRef.current?.destroy();
       voiceRef.current?.stop();
     };
   }, [router]);
 
-  const startListening = useCallback(() => {
+  // ═══════════════════════════════════════════════
+  // TEXT MODE — Web Speech API (original)
+  // ═══════════════════════════════════════════════
+  const startTextListening = useCallback(() => {
     if (speechRef.current) {
       speechRef.current.destroy();
     }
@@ -245,7 +474,6 @@ export default function InterviewPage() {
       maxSilenceTimeout: 15000,
       onResult: (text) => {
         setTranscript(text);
-        // Check for skip intent
         if (engineRef.current?.checkForSkipIntent(text)) {
           stopListening();
           voiceRef.current?.speak("Sure, let's move to the next question.").then(() => {
@@ -254,12 +482,12 @@ export default function InterviewPage() {
         }
       },
       onInterim: (text) => setInterimText(text),
-      onSilence: (partialTranscript) => {
-        engineRef.current?.handleSilence(partialTranscript);
+      onSilence: (partialTranscript, hasSpeechStarted) => {
+        engineRef.current?.handleSilence(partialTranscript, hasSpeechStarted);
       },
-      onMaxSilence: (partialTranscript) => {
+      onMaxSilence: (partialTranscript, hasSpeechStarted) => {
         stopListening();
-        engineRef.current?.handleMaxSilence(partialTranscript);
+        engineRef.current?.handleMaxSilence(partialTranscript, hasSpeechStarted);
       },
       onStart: () => setIsListening(true),
       onEnd: () => setIsListening(false),
@@ -272,24 +500,127 @@ export default function InterviewPage() {
     speech.start();
   }, []);
 
-  const stopListening = useCallback(() => {
-    if (speechRef.current) {
-      const finalTranscript = speechRef.current.stop();
-      setIsListening(false);
-      return finalTranscript;
+  // ═══════════════════════════════════════════════
+  // AUDIO MODE — MediaRecorder + Gemini
+  // ═══════════════════════════════════════════════
+  const startAudioRecording = useCallback(() => {
+    if (audioRecorderRef.current) {
+      audioRecorderRef.current.destroy();
     }
-    return "";
+
+    const recorder = new AudioRecorder({
+      silenceTimeout: 8000,
+      maxSilenceTimeout: 15000,
+      onAudioLevel: (level, dataArray) => {
+        setAudioLevel(level);
+        // Downsample waveform data for visualization
+        if (dataArray) {
+          const step = Math.floor(dataArray.length / 100);
+          const downsampled = [];
+          for (let i = 0; i < dataArray.length; i += step) {
+            downsampled.push(dataArray[i]);
+          }
+          setWaveformData(downsampled);
+        }
+      },
+      onSilence: (hasSpeechStarted) => {
+        // Pass hasSpeechStarted so the engine can auto-submit if user finished
+        engineRef.current?.handleSilence("", hasSpeechStarted);
+      },
+      onMaxSilence: async (hasSpeechStarted) => {
+        // Auto-submit what we have
+        if (hasSpeechStarted) {
+          // User spoke — let the engine handle auto-submit
+          engineRef.current?.handleMaxSilence("", true);
+        } else {
+          const result = await audioRecorderRef.current?.stop();
+          setIsRecording(false);
+          setIsListening(false);
+          if (result && result.hasSpeech && result.base64) {
+            engineRef.current?.submitAudioAnswer(result.base64, result.mimeType);
+          } else {
+            engineRef.current?.handleMaxSilence("", false);
+          }
+        }
+      },
+      onSpeechDetected: () => {
+        setHasSpeechDetected(true);
+        setShowHint("");
+      },
+      onStart: () => {
+        setIsRecording(true);
+        setIsListening(true);
+      },
+      onStop: () => {
+        setIsRecording(false);
+        setAudioLevel(0);
+        setWaveformData(null);
+      },
+      onRecordingTime: (seconds) => {
+        setRecordingDuration(seconds);
+      },
+      onError: (error) => {
+        console.error("AudioRecorder error:", error);
+        // Fallback to text mode
+        setInputMode("text");
+        setStatusMessage("Audio failed — switched to text recognition");
+        startTextListening();
+      },
+    });
+
+    audioRecorderRef.current = recorder;
+    recorder.start();
   }, []);
 
-  const handleSubmitAnswer = useCallback(() => {
-    const finalTranscript = stopListening();
-    const answer = finalTranscript || transcript;
-    if (answer && answer.trim().length > 0) {
-      engineRef.current?.submitAnswer(answer);
+  // Unified start/stop listening
+  const startListening = useCallback(() => {
+    if (inputMode === "audio") {
+      startAudioRecording();
     } else {
-      engineRef.current?.handleMaxSilence("");
+      startTextListening();
     }
-  }, [transcript, stopListening]);
+  }, [inputMode, startAudioRecording, startTextListening]);
+
+  const stopListening = useCallback(() => {
+    if (inputMode === "audio") {
+      if (audioRecorderRef.current) {
+        audioRecorderRef.current.destroy();
+        setIsRecording(false);
+        setIsListening(false);
+        setAudioLevel(0);
+        setWaveformData(null);
+      }
+    } else {
+      if (speechRef.current) {
+        speechRef.current.stop();
+        setIsListening(false);
+      }
+    }
+    return transcript;
+  }, [inputMode, transcript]);
+
+  const handleSubmitAnswer = useCallback(async () => {
+    if (inputMode === "audio") {
+      // Stop recording and get audio data
+      const result = await audioRecorderRef.current?.stop();
+      setIsRecording(false);
+      setIsListening(false);
+      if (result && result.base64) {
+        engineRef.current?.submitAudioAnswer(result.base64, result.mimeType);
+      } else {
+        engineRef.current?.handleMaxSilence("");
+      }
+    } else {
+      // Text mode — use transcript
+      const finalTranscript = speechRef.current?.stop() || transcript;
+      setIsListening(false);
+      if (finalTranscript && finalTranscript.trim().length > 0) {
+        engineRef.current?.submitAnswer(finalTranscript);
+      } else {
+        engineRef.current?.handleMaxSilence("");
+      }
+    }
+  }, [inputMode, transcript]);
 
   const handleSubmitCode = useCallback((code) => {
     voiceRef.current?.stop();
@@ -312,6 +643,24 @@ export default function InterviewPage() {
     engineRef.current?.complete();
   }, [stopListening]);
 
+  const handleModeChange = useCallback((newMode) => {
+    // Only allow mode change when not actively listening
+    if (interviewState === INTERVIEW_STATES.LISTENING) {
+      stopListening();
+      setInputMode(newMode);
+      // Restart listening in new mode
+      setTimeout(() => {
+        if (newMode === "audio") {
+          startAudioRecording();
+        } else {
+          startTextListening();
+        }
+      }, 300);
+    } else {
+      setInputMode(newMode);
+    }
+  }, [interviewState, stopListening, startAudioRecording, startTextListening]);
+
   const formatTime = (seconds) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -333,11 +682,22 @@ export default function InterviewPage() {
     return map[category] || "badge-primary";
   };
 
+  const getConfidenceBadge = (confidence) => {
+    const map = {
+      high: { class: "badge-accent", icon: "💪" },
+      medium: { class: "badge-primary", icon: "👍" },
+      low: { class: "badge-warm", icon: "😟" },
+    };
+    return map[confidence] || map.medium;
+  };
+
   if (!mounted) return null;
 
   const avgScore = answers.length > 0
     ? (answers.reduce((s, a) => s + (a.score || 0), 0) / answers.length).toFixed(1)
     : "—";
+
+  const lastAnswer = answers.length > 0 ? answers[answers.length - 1] : null;
 
   return (
     <div style={styles.wrapper}>
@@ -361,6 +721,14 @@ export default function InterviewPage() {
             <span className="badge">⏱️ {formatTime(totalTime)}</span>
             <span className="badge badge-accent">Avg: {avgScore}/10</span>
             {isCodingMode && <span className="coding-pulse">💻 Coding Mode</span>}
+            {/* Mode indicator */}
+            {!isCodingMode && interviewState !== INTERVIEW_STATES.IDLE && interviewState !== INTERVIEW_STATES.COMPLETED && (
+              <InputModeToggle
+                mode={inputMode}
+                onModeChange={handleModeChange}
+                disabled={interviewState === INTERVIEW_STATES.PROCESSING}
+              />
+            )}
           </div>
           <button className="btn btn-secondary" onClick={handleEndInterview} id="end-interview-btn" style={{ fontSize: "0.85rem" }}>
             End Interview
@@ -383,6 +751,37 @@ export default function InterviewPage() {
                 Your AI interviewer is ready{interviewMeta.targetCompany ? ` to simulate a ${interviewMeta.targetCompany}-style interview` : ""}.
                 Make sure your microphone is enabled.
               </p>
+
+              {/* Mode selection */}
+              <div className="glass-card" style={{ padding: "16px 20px", marginBottom: 20, textAlign: "left" }}>
+                <p className="label" style={{ marginBottom: 10 }}>🎧 Choose Input Mode</p>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button
+                    onClick={() => setInputMode("audio")}
+                    className={`interview-type-card ${inputMode === "audio" ? "active" : ""}`}
+                    style={{ flex: 1, padding: "14px 12px" }}
+                  >
+                    <span style={{ fontSize: "1.5rem" }}>🎤</span>
+                    <span style={{ fontWeight: 700, fontSize: "0.85rem" }}>Live Audio AI</span>
+                    <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", lineHeight: 1.3 }}>
+                      Gemini directly analyzes your voice — detects confidence, tone & more
+                    </span>
+                    <span className="badge badge-primary" style={{ fontSize: "0.6rem", marginTop: 4 }}>✨ Recommended</span>
+                  </button>
+                  <button
+                    onClick={() => setInputMode("text")}
+                    className={`interview-type-card ${inputMode === "text" ? "active" : ""}`}
+                    style={{ flex: 1, padding: "14px 12px" }}
+                  >
+                    <span style={{ fontSize: "1.5rem" }}>📝</span>
+                    <span style={{ fontWeight: 700, fontSize: "0.85rem" }}>Text Recognition</span>
+                    <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", lineHeight: 1.3 }}>
+                      Browser converts speech to text, then AI evaluates the text
+                    </span>
+                  </button>
+                </div>
+              </div>
+
               <div style={styles.preflight}>
                 <span className="badge badge-accent">✓ Microphone access needed</span>
                 <span className="badge badge-primary">✓ {progress.total} questions prepared</span>
@@ -390,6 +789,12 @@ export default function InterviewPage() {
                 {interviewMeta.targetCompany && (
                   <span className="badge badge-company">✓ {interviewMeta.targetCompany} style</span>
                 )}
+                <span className="badge" style={{
+                  background: inputMode === "audio" ? "rgba(99, 102, 241, 0.15)" : "rgba(16, 185, 129, 0.15)",
+                  color: inputMode === "audio" ? "var(--primary-300)" : "var(--accent-300)",
+                }}>
+                  {inputMode === "audio" ? "🎤 Audio AI Mode" : "📝 Text Mode"}
+                </span>
               </div>
               <button className="btn btn-primary btn-lg" onClick={handleStartInterview} id="begin-btn" style={{ marginTop: 24 }}>
                 🎙️ Start Interview
@@ -493,60 +898,155 @@ export default function InterviewPage() {
                 </div>
               ) : (
                 <>
-                  {/* Audio Visualizer */}
-                  <div style={styles.visualizer}>
-                    {[...Array(20)].map((_, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          width: 4,
-                          borderRadius: 2,
-                          background: isListening ? "var(--gradient-primary)" : "var(--gray-700)",
-                          height: isListening ? `${6 + Math.random() * 28}px` : "4px",
-                          transition: "height 0.15s ease",
-                          animation: isListening ? `speaking-wave ${0.8 + Math.random() * 0.8}s ease-in-out infinite ${i * 0.05}s` : "none",
-                        }}
-                      />
-                    ))}
-                  </div>
-
-                  {/* Transcript */}
-                  <div className="glass-card" style={styles.transcriptCard}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span className="label" style={{ margin: 0 }}>Your Response</span>
-                      {isListening && (
-                        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.75rem", color: "var(--accent-400)" }}>
-                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent-500)", animation: "pulse-glow 1.5s infinite" }} />
-                          Recording
-                        </span>
-                      )}
-                    </div>
-                    <div style={styles.transcriptArea}>
-                      {transcript || interimText ? (
-                        <>
-                          <span style={{ color: "var(--text-primary)" }}>{transcript}</span>
-                          {interimText && (
-                            <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}> {interimText}</span>
+                  {/* ═══ AUDIO MODE ═══ */}
+                  {inputMode === "audio" ? (
+                    <>
+                      {/* Live Waveform Visualizer */}
+                      <div className="glass-card" style={{ padding: "16px 20px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span className="label" style={{ margin: 0 }}>🎤 Live Audio Recording</span>
+                            {isRecording && (
+                              <span style={{
+                                display: "flex", alignItems: "center", gap: 5,
+                                fontSize: "0.75rem", color: "var(--danger-400)",
+                                animation: "pulse-glow 1.5s infinite",
+                              }}>
+                                <span style={{
+                                  width: 8, height: 8, borderRadius: "50%",
+                                  background: "var(--danger-500)",
+                                  animation: "pulse-glow 1s infinite",
+                                }} />
+                                REC
+                              </span>
+                            )}
+                          </div>
+                          {isRecording && (
+                            <span style={{
+                              fontSize: "0.85rem", fontWeight: 600,
+                              fontFamily: "var(--font-mono, monospace)",
+                              color: "var(--text-primary)",
+                            }}>
+                              {formatTime(recordingDuration)}
+                            </span>
                           )}
-                        </>
-                      ) : (
-                        <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
-                          {interviewState === INTERVIEW_STATES.LISTENING
-                            ? "Start speaking your answer..."
-                            : "Waiting for question..."}
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                        </div>
+
+                        <WaveformVisualizer
+                          audioLevel={audioLevel}
+                          isActive={isRecording}
+                          waveformData={waveformData}
+                        />
+
+                        <div style={{
+                          display: "flex", justifyContent: "space-between", alignItems: "center",
+                          marginTop: 10, fontSize: "0.75rem", color: "var(--text-muted)",
+                        }}>
+                          <span>
+                            {isRecording
+                              ? hasSpeechDetected
+                                ? "🟢 Speech detected — speak clearly"
+                                : "⏳ Waiting for you to start speaking..."
+                              : interviewState === INTERVIEW_STATES.LISTENING
+                                ? "Microphone starting..."
+                                : "Microphone idle"}
+                          </span>
+                          <span style={{ color: "var(--primary-400)", fontSize: "0.7rem" }}>
+                            ✨ Gemini analyzes audio directly
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Audio mode info card */}
+                      <div style={{
+                        padding: "10px 16px",
+                        background: "rgba(99, 102, 241, 0.05)",
+                        borderRadius: "var(--radius-md)",
+                        border: "1px solid rgba(99, 102, 241, 0.1)",
+                        fontSize: "0.78rem",
+                        color: "var(--text-muted)",
+                        lineHeight: 1.5,
+                      }}>
+                        💡 <strong style={{ color: "var(--primary-300)" }}>Smart Audio Mode</strong> — Your voice is recorded and sent directly to Gemini for analysis.
+                        When you finish speaking, the system <strong>automatically submits after 8 seconds of silence</strong> — no need to click any button.
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* ═══ TEXT MODE (Original) ═══ */}
+                      {/* Audio Visualizer (fake bars) */}
+                      <div style={styles.visualizer}>
+                        {[...Array(20)].map((_, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              width: 4,
+                              borderRadius: 2,
+                              background: isListening ? "var(--gradient-primary)" : "var(--gray-700)",
+                              height: isListening ? `${6 + Math.random() * 28}px` : "4px",
+                              transition: "height 0.15s ease",
+                              animation: isListening ? `speaking-wave ${0.8 + Math.random() * 0.8}s ease-in-out infinite ${i * 0.05}s` : "none",
+                            }}
+                          />
+                        ))}
+                      </div>
+
+                      {/* Transcript */}
+                      <div className="glass-card" style={styles.transcriptCard}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                          <span className="label" style={{ margin: 0 }}>Your Response</span>
+                          {isListening && (
+                            <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.75rem", color: "var(--accent-400)" }}>
+                              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent-500)", animation: "pulse-glow 1.5s infinite" }} />
+                              Recording
+                            </span>
+                          )}
+                        </div>
+                        <div style={styles.transcriptArea}>
+                          {transcript || interimText ? (
+                            <>
+                              <span style={{ color: "var(--text-primary)" }}>{transcript}</span>
+                              {interimText && (
+                                <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}> {interimText}</span>
+                              )}
+                            </>
+                          ) : (
+                            <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
+                              {interviewState === INTERVIEW_STATES.LISTENING
+                                ? "Start speaking your answer..."
+                                : "Waiting for question..."}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
 
               {/* Status */}
               <p style={styles.statusMessage}>{statusMessage}</p>
 
+              {/* Auto-submit indicator */}
+              {autoSubmitting && (
+                <div className="animate-fade-in" style={{
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  gap: 10, padding: "10px 18px",
+                  background: "rgba(16, 185, 129, 0.1)",
+                  border: "1px solid rgba(16, 185, 129, 0.3)",
+                  borderRadius: "var(--radius-md)",
+                  animation: "pulse-glow 1.5s infinite",
+                }}>
+                  <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2, borderColor: "var(--accent-400) transparent transparent transparent" }} />
+                  <span style={{ fontSize: "0.85rem", color: "var(--accent-300)", fontWeight: 600 }}>
+                    ✓ Silence detected — auto-submitting your answer...
+                  </span>
+                </div>
+              )}
+
               {/* Controls */}
               <div style={styles.controls}>
-                {interviewState === INTERVIEW_STATES.LISTENING && (
+                {interviewState === INTERVIEW_STATES.LISTENING && !autoSubmitting && (
                   <>
                     <button
                       className="btn btn-primary btn-lg"
@@ -554,7 +1054,7 @@ export default function InterviewPage() {
                       id="submit-answer-btn"
                       style={{ flex: 1 }}
                     >
-                      ✓ Submit Answer
+                      {inputMode === "audio" ? "🎤 Submit Audio Answer" : "✓ Submit Answer"}
                     </button>
                     <button
                       className="btn btn-secondary"
@@ -578,35 +1078,67 @@ export default function InterviewPage() {
                 {interviewState === INTERVIEW_STATES.PROCESSING && (
                   <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "center", width: "100%" }}>
                     <span className="spinner" />
-                    <span style={{ color: "var(--text-secondary)" }}>Evaluating your response...</span>
+                    <span style={{ color: "var(--text-secondary)" }}>
+                      {inputMode === "audio" ? "Gemini is analyzing your audio..." : "Evaluating your response..."}
+                    </span>
                   </div>
                 )}
               </div>
 
               {/* Last score */}
-              {answers.length > 0 && (
+              {lastAnswer && (
                 <div className="glass-card animate-fade-in" style={styles.lastScore}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
                         Previous Q
                       </span>
-                      <span className={`badge ${getCategoryBadgeClass(answers[answers.length - 1].category)}`} style={{ fontSize: "0.65rem" }}>
-                        {answers[answers.length - 1].category}
+                      <span className={`badge ${getCategoryBadgeClass(lastAnswer.category)}`} style={{ fontSize: "0.65rem" }}>
+                        {lastAnswer.category}
                       </span>
                     </div>
                     <span style={{
                       fontWeight: 700,
                       fontSize: "1.25rem",
-                      color: answers[answers.length - 1].score >= 7 ? "var(--accent-400)" :
-                        answers[answers.length - 1].score >= 4 ? "var(--warm-400)" : "var(--danger-400)",
+                      color: lastAnswer.score >= 7 ? "var(--accent-400)" :
+                        lastAnswer.score >= 4 ? "var(--warm-400)" : "var(--danger-400)",
                     }}>
-                      {answers[answers.length - 1].score}/10
+                      {lastAnswer.score}/10
                     </span>
                   </div>
-                  {answers[answers.length - 1].feedback && (
+                  {lastAnswer.feedback && (
                     <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: 6, lineHeight: 1.5 }}>
-                      {answers[answers.length - 1].feedback}
+                      {lastAnswer.feedback}
+                    </p>
+                  )}
+                  {/* Audio-specific feedback badges */}
+                  {lastAnswer.audioMode && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8 }}>
+                      {lastAnswer.confidence && (
+                        <span className={`badge ${getConfidenceBadge(lastAnswer.confidence).class}`} style={{ fontSize: "0.65rem" }}>
+                          {getConfidenceBadge(lastAnswer.confidence).icon} Confidence: {lastAnswer.confidence}
+                        </span>
+                      )}
+                      {lastAnswer.clarity && (
+                        <span className="badge" style={{ fontSize: "0.65rem" }}>
+                          🗣️ Clarity: {lastAnswer.clarity}
+                        </span>
+                      )}
+                      {lastAnswer.speakingPace && (
+                        <span className="badge" style={{ fontSize: "0.65rem" }}>
+                          ⚡ Pace: {lastAnswer.speakingPace}
+                        </span>
+                      )}
+                      {lastAnswer.fillerWords && lastAnswer.fillerWords !== "none" && (
+                        <span className="badge badge-warm" style={{ fontSize: "0.65rem" }}>
+                          🔇 Fillers: {lastAnswer.fillerWords}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {lastAnswer.speakingFeedback && (
+                    <p style={{ fontSize: "0.75rem", color: "var(--primary-300)", marginTop: 6, fontStyle: "italic" }}>
+                      🎤 {lastAnswer.speakingFeedback}
                     </p>
                   )}
                 </div>
@@ -651,7 +1183,7 @@ const styles = {
     minHeight: "calc(100vh - 140px)",
   },
   startCard: {
-    padding: "48px 40px", textAlign: "center", maxWidth: 520,
+    padding: "48px 40px", textAlign: "center", maxWidth: 560,
   },
   avatarLarge: { fontSize: "4rem", marginBottom: 16 },
   preflight: { display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" },
@@ -665,7 +1197,8 @@ const styles = {
   avatar: {
     width: 64, height: 64, borderRadius: "50%",
     display: "flex", alignItems: "center", justifyContent: "center",
-    background: "var(--bg-glass)", border: "2px solid var(--border-subtle)",
+    background: "var(--bg-glass)",
+    borderWidth: 2, borderStyle: "solid", borderColor: "var(--border-subtle)",
     position: "relative", transition: "all 0.3s",
   },
   avatarSpeaking: {
@@ -687,7 +1220,8 @@ const styles = {
   questionCard: { padding: "24px" },
   hintCard: {
     padding: "14px 18px", display: "flex", gap: 10, alignItems: "start",
-    background: "rgba(99, 102, 241, 0.08)", borderColor: "rgba(99, 102, 241, 0.2)",
+    background: "rgba(99, 102, 241, 0.08)",
+    borderWidth: 1, borderStyle: "solid", borderColor: "rgba(99, 102, 241, 0.2)",
   },
   visualizer: {
     display: "flex", justifyContent: "center", alignItems: "center",
