@@ -380,6 +380,37 @@ CRITICAL RULES:
 10. Include at least ONE curveball question from the role-specific topics — designed to test depth beyond surface knowledge.
 11. For GAP/FOCUS areas from resume analysis — include probing questions that verify whether the candidate genuinely knows what they claim.
 
+=== EXTRA RULES FOR MAXIMUM RELEVANCE (YOU MUST FOLLOW THESE) ===
+
+12. PROJECT DEEP-DIVE RULES — For EVERY project question, you MUST ask ONE of these angles:
+    a) HOW they built it: "Walk me through the architecture of [Project Name]. How did you structure the frontend and backend? What was your database schema?"
+    b) WHY it's useful for the domain: "How does [Project Name] solve a real-world problem in [their domain]? Who would use this and why?"
+    c) TECHNICAL DECISIONS: "In [Project Name], you used [Tech X]. What happens under the hood when [specific action]? How does [Tech X] handle [edge case relevant to their project]?"
+    d) SCALE & IMPROVEMENT: "If [Project Name] had to handle 10x or 100x the current load, what would break first? How would you redesign it?"
+    e) REAL CHALLENGES: "What was the hardest bug or challenge you faced while building [Project Name]? Walk me through your debugging process."
+    NEVER ask a shallow project question like "Tell me about your project". Always dig into HOW, WHY, WHAT-IF.
+
+13. DOMAIN + ROLE RELEVANCE — Every technical question must connect to both:
+    a) The candidate's ACTUAL domain expertise: ${(resumeAnalysis.domainExpertise || []).join(', ') || 'their background'}
+    b) The TARGET ROLE requirements for ${targetRole}
+    Example: If the candidate has ML projects and is applying for Backend Developer, ask: "You built [ML Project Name] — how did you design the API layer to serve model predictions? What considerations did you have for latency and throughput?"
+
+14. RESUME VERIFICATION — At least 2 questions should SUBTLY VERIFY resume claims:
+    a) If they claim "proficiency" in a skill, ask a question that ONLY someone proficient could answer
+    b) If they list a technology but no project uses it, ask: "I see you have [Tech] on your resume but I don't see it prominently in your projects. Can you tell me about a time you used [Tech] in depth?"
+    c) If they mention metrics (e.g., "improved performance by 40%"), ask: "How did you measure that 40% improvement? What was the baseline?"
+
+15. CONNECTING PROJECTS TO THE ROLE — For at least 2 questions, explicitly connect their project experience to the ${targetRole} role:
+    a) "In [Project Name] you used [Tech]. How would you apply that experience in a ${targetRole} context at ${targetCompany || 'a production environment'}?"
+    b) "What lessons from building [Project Name] would you bring to this ${targetRole} position?"
+
+16. FOLLOW-UP STYLE — Frame questions as if you've READ their resume carefully. Use phrases like:
+    - "I noticed in your resume that..."
+    - "Your project [Name] caught my attention because..."
+    - "You mentioned [specific detail] — can you elaborate on..."
+    - "Given your experience with [specific tech from resume]..."
+    NEVER sound like you haven't read their resume.
+
 Return a JSON array (no markdown, no code blocks, just pure JSON):
 [
   {

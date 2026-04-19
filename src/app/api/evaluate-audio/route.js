@@ -103,10 +103,15 @@ Scoring guide:
 - 3-4: Weak — vague, hesitant, or partially relevant
 - 1-2: Poor — no substantial answer, very unclear, or inaudible
 
+CRITICAL: The "transcript" field is EXTREMELY IMPORTANT — the candidate will see this as a record of what they said. 
+You MUST provide an ACCURATE, COMPLETE word-for-word transcription of everything the candidate spoke. 
+Do NOT paraphrase, summarize, or shorten. Include filler words, self-corrections, and natural speech patterns.
+If the audio is unclear, do your best to transcribe and mark uncertain parts with [unclear].
+
 Return a JSON object (no markdown, no code blocks, just pure JSON):
 {
   "score": 7,
-  "transcript": "Full transcription of what the candidate said — word for word",
+  "transcript": "Full transcription of what the candidate said — WORD FOR WORD, complete and accurate. This will be shown to the candidate.",
   "feedback": "Brief constructive feedback (2-3 sentences max)",
   "strengths": "What was good about the answer and delivery",
   "improvement": "What could be improved — be specific and actionable",

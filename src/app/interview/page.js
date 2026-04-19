@@ -282,6 +282,7 @@ export default function InterviewPage() {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [hasSpeechDetected, setHasSpeechDetected] = useState(false);
   const [autoSubmitting, setAutoSubmitting] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState(""); // Shows transcript in audio mode
 
   const engineRef = useRef(null);
   const speechRef = useRef(null);
@@ -339,6 +340,7 @@ export default function InterviewPage() {
           setRecordingDuration(0);
           setAutoSubmitting(false);
           isAutoSubmittingRef.current = false;
+          setLiveTranscript("");
         } else if (state === INTERVIEW_STATES.LISTENING) {
           setStatusMessage("Your turn — speak your answer");
           setIsCodingMode(false);
@@ -383,7 +385,14 @@ export default function InterviewPage() {
           }
         }, typeSpeed);
       },
-      onScoreUpdate: (ans) => setAnswers([...ans]),
+      onScoreUpdate: (ans) => {
+        setAnswers([...ans]);
+        // Capture transcript from audio evaluation so user can see what they said
+        const lastAns = ans[ans.length - 1];
+        if (lastAns?.audioMode && lastAns?.answer && lastAns.answer !== '(Audio answer)' && lastAns.answer !== '(Audio evaluation failed)') {
+          setLiveTranscript(lastAns.answer);
+        }
+      },
       onComplete: (report, ans) => {
         stopListening();
         voice.stop();
@@ -401,7 +410,7 @@ export default function InterviewPage() {
       onCodingQuestion: () => {
         // Already handled via state change to CODING
       },
-      // ─── SMART AUTO-SUBMIT: user spoke then went silent for 8s ───
+      // ─── SMART AUTO-SUBMIT: user spoke then went silent for 5s ───
       onAutoSubmit: (mode) => {
         if (isAutoSubmittingRef.current) return; // Prevent double-submit
         isAutoSubmittingRef.current = true;
@@ -968,7 +977,41 @@ export default function InterviewPage() {
                         lineHeight: 1.5,
                       }}>
                         💡 <strong style={{ color: "var(--primary-300)" }}>Smart Audio Mode</strong> — Your voice is recorded and sent directly to Gemini for analysis.
-                        When you finish speaking, the system <strong>automatically submits after 8 seconds of silence</strong> — no need to click any button.
+                        When you finish speaking, the system <strong>automatically submits after 5 seconds of silence</strong> — no need to click any button.
+                      </div>
+
+                      {/* Live transcript display in audio mode */}
+                      <div className="glass-card" style={{ padding: "16px 20px", minHeight: 100 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                          <span className="label" style={{ margin: 0 }}>📝 Your Response (Live)</span>
+                          {isRecording && hasSpeechDetected && (
+                            <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.75rem", color: "var(--accent-400)" }}>
+                              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent-500)", animation: "pulse-glow 1.5s infinite" }} />
+                              Listening
+                            </span>
+                          )}
+                        </div>
+                        <div style={{
+                          minHeight: 60,
+                          fontSize: "1rem",
+                          lineHeight: 1.7,
+                          whiteSpace: "pre-wrap",
+                          color: liveTranscript ? "var(--text-primary)" : "var(--text-muted)",
+                          fontStyle: liveTranscript ? "normal" : "italic",
+                        }}>
+                          {liveTranscript
+                            ? liveTranscript
+                            : interviewState === INTERVIEW_STATES.LISTENING
+                              ? hasSpeechDetected
+                                ? "🎤 Speaking detected — transcript will appear after evaluation..."
+                                : "Start speaking your answer..."
+                              : interviewState === INTERVIEW_STATES.PROCESSING
+                                ? "⏳ Analyzing your audio response..."
+                                : "Waiting for question..."}
+                        </div>
+                        <div style={{ marginTop: 8, fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                          ✨ Full transcription appears after Gemini analyzes your audio
+                        </div>
                       </div>
                     </>
                   ) : (

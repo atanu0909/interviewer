@@ -4,8 +4,8 @@
 
 export class AudioRecorder {
   constructor(options = {}) {
-    this.silenceTimeout = options.silenceTimeout || 8000;
-    this.maxSilenceTimeout = options.maxSilenceTimeout || 15000;
+    this.silenceTimeout = options.silenceTimeout || 5000;
+    this.maxSilenceTimeout = options.maxSilenceTimeout || 12000;
     this.silenceThreshold = options.silenceThreshold || 0.015; // RMS threshold for "silence"
     this.maxRecordingTime = options.maxRecordingTime || 120000; // 2 minutes max
 

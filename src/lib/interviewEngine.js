@@ -299,19 +299,19 @@ export class InterviewEngine {
     }
   }
 
-  // Called when silence is detected (8s) — SMART auto-submit logic
+  // Called when silence is detected (5s) — SMART auto-submit logic
   // hasSpeech: whether the user spoke during this listening session
   async handleSilence(partialTranscript, hasSpeech = false) {
     if (this.state !== INTERVIEW_STATES.LISTENING) return;
 
-    // ─── USER SPOKE + 8s SILENCE → They finished answering → AUTO-SUBMIT ───
+    // ─── USER SPOKE + 5s SILENCE → They finished answering → AUTO-SUBMIT ───
     if (hasSpeech && partialTranscript && partialTranscript.trim().length > 10) {
       // Signal the UI that we're auto-submitting
       this.onAutoSubmit('text');
       return; // The interview page will handle the actual submission
     }
 
-    // ─── USER SPOKE + 8s SILENCE in AUDIO mode → signal auto-submit ───
+    // ─── USER SPOKE + 5s SILENCE in AUDIO mode → signal auto-submit ───
     if (hasSpeech && !partialTranscript) {
       // Audio mode — no transcript available, but speech was detected via RMS
       this.onAutoSubmit('audio');
@@ -326,7 +326,7 @@ export class InterviewEngine {
         body: JSON.stringify({
           question: this.getCurrentQuestion()?.question,
           partialTranscript: partialTranscript || '',
-          silenceDuration: 8,
+          silenceDuration: 5,
         }),
       });
 
@@ -343,7 +343,7 @@ export class InterviewEngine {
     }
   }
 
-  // Called on max silence (15s) — hard stop safety net
+  // Called on max silence (12s) — hard stop safety net
   handleMaxSilence(partialTranscript, hasSpeech = false) {
     if (this.state !== INTERVIEW_STATES.LISTENING) return;
 

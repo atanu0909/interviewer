@@ -4,8 +4,8 @@
 export class SpeechManager {
   constructor(options = {}) {
     this.lang = options.lang || 'en-IN';
-    this.silenceTimeout = options.silenceTimeout || 8000;
-    this.maxSilenceTimeout = options.maxSilenceTimeout || 15000;
+    this.silenceTimeout = options.silenceTimeout || 5000;
+    this.maxSilenceTimeout = options.maxSilenceTimeout || 12000;
     this.recognition = null;
     this.isListening = false;
     this.transcript = '';
