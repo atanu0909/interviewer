@@ -1,6 +1,11 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
 
+// Ensure this route runs in Node.js serverless runtime (not Edge)
+export const runtime = 'nodejs';
+// Allow up to 60 seconds for large PDF processing
+export const maxDuration = 60;
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 export async function POST(request) {
