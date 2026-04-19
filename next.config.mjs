@@ -8,7 +8,6 @@ const nextConfig = {
   turbopack: {
     root: __dirname,
   },
-  serverExternalPackages: ['pdf-parse', '@napi-rs/canvas', 'pdfjs-dist'],
 };
 
 export default nextConfig;

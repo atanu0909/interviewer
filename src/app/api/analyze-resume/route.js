@@ -13,33 +13,15 @@ export async function POST(request) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    
-    // pdf-parse v2 uses a class-based API
-    const { PDFParse } = await import('pdf-parse');
-    const parser = new PDFParse({ data: new Uint8Array(buffer) });
-    let resumeText;
-    try {
-      const textResult = await parser.getText();
-      resumeText = textResult.text;
-    } finally {
-      await parser.destroy();
-    }
-
-    if (!resumeText || resumeText.trim().length < 50) {
-      return NextResponse.json({ error: 'Could not extract enough text from the resume. Please upload a text-based PDF.' }, { status: 400 });
-    }
+    const base64PDF = buffer.toString('base64');
 
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
-    const prompt = `You are an expert HR professional and resume analyst. Perform an EXHAUSTIVE deep analysis of the following resume. Extract every single detail — leave nothing unexamined.
-
-Resume Text:
-"""
-${resumeText}
-"""
+    const prompt = `You are an expert HR professional and resume analyst. You are given a resume PDF. Perform an EXHAUSTIVE deep analysis. Extract every single detail — leave nothing unexamined.
 
 Return a JSON object with EXACTLY this structure (no markdown, no code blocks, just pure JSON):
 {
+  "resumeText": "The FULL extracted text content from the resume — include everything: name, contact info, all sections, all bullet points. This should be a complete plain-text extraction of the entire resume.",
   "name": "Candidate's full name",
   "email": "Email if found, or empty string",
   "phone": "Phone if found, or empty string",
@@ -111,6 +93,7 @@ Return a JSON object with EXACTLY this structure (no markdown, no code blocks, j
 }
 
 CRITICAL RULES:
+- The "resumeText" field MUST contain the complete extracted text from every section of the resume — this is used later for cross-referencing during the interview
 - Extract EVERY project, even small ones. For each project, think about what alternative technologies exist and what challenges they likely faced
 - Separate internships from full-time experience — they require different interview approaches
 - For programming languages, analyze the ENTIRE resume to determine which ones they actually use vs. just list. Note context like "used Java in 3 projects" vs "listed Java but no projects show it"
@@ -119,18 +102,32 @@ CRITICAL RULES:
 - Be thorough with gaps — if someone claims "5 years of React" but only shows 1 project, note that
 - If the resume has open source work, hackathons, competitions — these are GOLD for interview questions`;
 
-    const result = await model.generateContent(prompt);
+    // Send PDF directly to Gemini as multimodal input — no pdf-parse needed
+    const result = await model.generateContent([
+      {
+        inlineData: {
+          mimeType: 'application/pdf',
+          data: base64PDF,
+        },
+      },
+      { text: prompt },
+    ]);
+
     const responseText = result.response.text();
 
     // Extract JSON from response
     let analysis;
+    let resumeText = '';
     try {
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       analysis = JSON.parse(jsonMatch[0]);
+      // Extract resumeText from the analysis and remove it from the analysis object
+      resumeText = analysis.resumeText || '';
+      delete analysis.resumeText;
     } catch {
       analysis = {
         name: 'Candidate',
-        summary: resumeText.substring(0, 200),
+        summary: 'Resume uploaded successfully but detailed parsing encountered an issue.',
         skills: { technical: [], soft: [], tools: [] },
         programmingLanguages: [],
         experience: [],
@@ -153,7 +150,7 @@ CRITICAL RULES:
     return NextResponse.json({
       success: true,
       analysis,
-      resumeText: resumeText.substring(0, 12000), // Increased from 8000 for deeper context
+      resumeText: resumeText.substring(0, 12000),
     });
   } catch (error) {
     console.error('Resume analysis error:', error);
